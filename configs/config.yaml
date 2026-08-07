@@ -1,0 +1,33 @@
+
+# Physics Engine Settings
+physics:
+  sample_rate: 4096
+  duration: 0.0625
+  scale: 1e-21
+
+# Target Event (GW250114 benchmark values)
+event:
+  fixed_iota: 0.5
+  fixed_phi: 1.2
+  fixed_ra: 1.5
+  fixed_dec: -0.5
+  fixed_psi: 0.8
+  fixed_gps: 1420950000.0
+
+# Neural Architecture
+model:
+  in_channels: 1
+  param_dim: 6
+  context_dim: 64
+  hidden_features: 128
+  num_transforms: 5
+
+# Training Hyperparameters
+training:
+  epochs: 10
+  batch_size: 64
+  learning_rate: 0.0005
+  num_train_samples: 2048
+  num_val_samples: 512
+  save_dir: "saved_models/best_ringdown_model.pth"
+  

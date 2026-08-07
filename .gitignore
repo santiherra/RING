@@ -1,0 +1,25 @@
+# Virtual Environments
+.venv/
+venv/
+env/
+.env
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch Model Weights (Avoid pushing massive binary files to Git)
+saved_models/
+*.pth
+*.pt
+
+# OS Generated Files (Mac)
+.DS_Store
+.DS_Store?
+._*
+
+# IDEs and Editors
+.vscode/
+.idea/
+EOF

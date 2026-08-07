@@ -1,0 +1,20 @@
+# PyTorch (Core Deep Learning Framework)
+torch
+torchvision
+
+# Math and Plotting
+numpy
+matplotlib
+scipy
+emcee
+corner
+
+# Physics and Gravitational Waves
+bilby
+qnm
+
+# Normalizing Flows (Statistical Inference)
+nflows
+
+# Utility
+PyYAML
