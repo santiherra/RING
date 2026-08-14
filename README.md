@@ -116,4 +116,4 @@ This project relies on several open-source libraries. For further reading on the
 * > Gregory Ashton et al., _BILBY: A user-friendly Bayesian inference library for gravitational-wave astronomy_, The Astrophysical Journal Supplement Series (2019) 241, 27. [[arXiv]](https://arxiv.org/abs/1811.02042)
 * > Conor Durkan, Artur Bekasov, Iain Murray, George Papamakarios, _Neural Spline Flows_, NeurIPS 2019. [[arXiv]](https://arxiv.org/abs/1906.04032)
 * > Leo C. Stein, _qnm: A Python package for calculating Kerr quasinormal modes, separation constants, and spherical-spheroidal mixing coefficients_, Journal of Open Source Software, 4(42), 1683 (2019). [[arXiv]](https://arxiv.org/abs/2002.03712)
-* > Daniel Foreman-Mackey, _corner.py: Scatterplot matrices in Python_, Journal of Open Source Software, 1(2), 24 (2016).[[JOSS]](https://joss.theoj.org/papers/10.21105/joss.00024)
+* > Daniel Foreman-Mackey, _corner.py: Scatterplot matrices in Python_, Journal of Open Source Software, 1(2), 24 (2016). [[JOSS]](https://joss.theoj.org/papers/10.21105/joss.00024)
