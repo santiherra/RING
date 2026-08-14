@@ -2,22 +2,35 @@
 .venv/
 venv/
 env/
-.env
+ENV
 
 # Python Cache
 __pycache__/
-*.py[cod]
-*$py.class
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 
-# PyTorch Model Weights (Avoid pushing massive binary files to Git)
+# PyTorch Model Weights
 saved_models/
 *.pth
 *.pt
+
+# Plots & Diagnostics
+diagnostics/
+
+# Ignore all yaml files in the configs folder except for the master config.yaml
+configs/*.yaml
+!configs/config.yaml
 
 # OS Generated Files (Mac)
 .DS_Store
 .DS_Store?
 ._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # IDEs and Editors
 .vscode/

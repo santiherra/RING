@@ -38,18 +38,26 @@ class RingdownDataset(Dataset):
             config = load_config(config_path)
         self.config = config
         
-        # Physics parameters from config
+        # Physics parameters
         self.sample_rate = config['physics']['sample_rate']
         self.duration = config['physics']['duration']
         self.scale = float(config['physics']['scale'])
         
-        # Fixed Extrinsic Parameters from config (Anchored to GW250114)
+        # Fixed Extrinsic Parameters
         self.fixed_iota = config['event']['fixed_iota']
         self.fixed_phi = config['event']['fixed_phi']
         self.fixed_ra = config['event']['fixed_ra']
         self.fixed_dec = config['event']['fixed_dec']
         self.fixed_psi = config['event']['fixed_psi']
         self.fixed_gps = config['event']['fixed_gps']
+
+        # Prior Boundaries
+        self.mass_min = config['priors']['mass_min']
+        self.mass_max = config['priors']['mass_max']
+        self.spin_min = config['priors']['spin_min']
+        self.spin_max = config['priors']['spin_max']
+        self.amp_min = config['priors']['amp_min']
+        self.amp_max = config['priors']['amp_max']
 
         # Initialize PSD object once
         self.psd = bilby.gw.detector.PowerSpectralDensity.from_aligo()
@@ -76,14 +84,14 @@ class RingdownDataset(Dataset):
         '''
         
         # Randomly sample target intrinsic parameters
-        Mf = np.random.uniform(50.0, 100.0)
-        af = np.random.uniform(0.5, 0.99)
+        Mf = np.random.uniform(self.mass_min, self.mass_max)
+        af = np.random.uniform(self.spin_min, self.spin_max)
         
-        # Cartesian amplitudes generated at physical scale from config
-        C_re_0 = np.random.uniform(-5.0, 5.0) * self.scale
-        C_im_0 = np.random.uniform(-5.0, 5.0) * self.scale
-        C_re_1 = np.random.uniform(-5.0, 5.0) * self.scale
-        C_im_1 = np.random.uniform(-5.0, 5.0) * self.scale
+        # Cartesian amplitudes generated at physical scale
+        C_re_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        C_im_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        C_re_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        C_im_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
         
         # Generate physics waveform
         t, hp, hx = generate_ringdown(
@@ -99,6 +107,23 @@ class RingdownDataset(Dataset):
             ra=self.fixed_ra, dec=self.fixed_dec, psi=self.fixed_psi, gps_time=self.fixed_gps, 
             detector="H1"
         )
+
+        # SNR Calculation 
+        # Transform pure signal to frequency domain
+        h_fd = np.fft.rfft(h_det) * (1.0 / self.sample_rate)
+        freqs = np.fft.rfftfreq(len(h_det), d=1.0 / self.sample_rate)
+        
+        # Interpolate PSD to match frequency bins
+        psd_interp = self.psd.power_spectral_density_interpolated(freqs)
+        
+        # Compute optimal matched filter SNR 
+        valid_idx = psd_interp > 0
+        snr_sq = 0.0
+        if np.any(valid_idx):
+            df = 1.0 / self.duration
+            snr_sq = 4.0 * np.sum((np.abs(h_fd[valid_idx])**2) / psd_interp[valid_idx]) * df
+        
+        optimal_snr = np.sqrt(snr_sq)
         
         # Generate colored noise
         noise = generate_noise(duration=self.duration, sample_rate=self.sample_rate, psd=self.psd)
@@ -114,15 +139,17 @@ class RingdownDataset(Dataset):
             [Mf, af, C_re_0 / self.scale, C_im_0 / self.scale, C_re_1 / self.scale, C_im_1 / self.scale], 
             dtype=torch.float32
         )
+
+        snr_tensor = torch.tensor([optimal_snr], dtype=torch.float32)
         
-        return signal_tensor, params_tensor
+        return signal_tensor, params_tensor, snr_tensor
 
 
 ''' QUICK TEST '''
 
 if __name__ == "__main__":
     dataset = RingdownDataset(num_samples=10)
-    signal, parameters = dataset[0]
+    signal, parameters, snr = dataset[0]
     print(f"Signal tensor shape: {signal.shape}")
     print(f"Parameters tensor shape: {parameters.shape}")
     print(f"True Remnant Mass: {parameters[0]:.2f} Solar Masses")

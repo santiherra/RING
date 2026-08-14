@@ -1,11 +1,10 @@
-
 # Physics Engine Settings
 physics:
   sample_rate: 4096
   duration: 0.0625
   scale: 1e-21
 
-# Target Event (GW250114 benchmark values)
+# Target Event (Extrinsic Parameters)
 event:
   fixed_iota: 0.5
   fixed_phi: 1.2
@@ -13,6 +12,15 @@ event:
   fixed_dec: -0.5
   fixed_psi: 0.8
   fixed_gps: 1420950000.0
+
+# Prior Boundaries (Intrinsic Parameters)
+priors:
+  mass_min: 50.0
+  mass_max: 100.0
+  spin_min: 0.5    
+  spin_max: 0.99 
+  amp_min: -5.0
+  amp_max: 5.0
 
 # Neural Architecture
 model:
@@ -24,10 +32,17 @@ model:
 
 # Training Hyperparameters
 training:
-  epochs: 10
+  epochs: 100
   batch_size: 64
   learning_rate: 0.0005
   num_train_samples: 2048
   num_val_samples: 512
   save_dir: "saved_models/best_ringdown_model.pth"
-  
+
+# Pipeline Diagnostics (Optional Outputs, set to false to disable)
+diagnostics:
+  plot_loss_curve: true
+  plot_snr_distribution: true
+  pp_plot:
+    num_test_events: 1000
+    num_samples_per_event: 10000

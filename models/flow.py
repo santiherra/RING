@@ -15,11 +15,12 @@ from nflows.transforms.permutations import ReversePermutation
 from models.embedding import WaveformEmbedding
 
 class RingdownPosterior(nn.Module):
-    def __init__(self, param_dim=6, context_dim=64, hidden_features=128, num_transforms=5):
+    def __init__(self, in_channels=1, param_dim=6, context_dim=64, hidden_features=128, num_transforms=5):
         """
         Combines the 1D CNN with a Normalizing Flow to predict parameter posteriors.
         
         Parameters:
+        - in_channels: The number of input channels for the CNN (default 1).
         - param_dim: The number of physical parameters to predict (default 6).
         - context_dim: The number of features extracted by the CNN (default 64).
         - hidden_features: Width of the internal neural networks inside the flow (default 128).
@@ -33,7 +34,7 @@ class RingdownPosterior(nn.Module):
         super(RingdownPosterior, self).__init__()
         
         # The Feature Extractor (CNN)
-        self.embedding_net = WaveformEmbedding(in_channels=1, output_dim=context_dim)
+        self.embedding_net = WaveformEmbedding(in_channels=in_channels, output_dim=context_dim)
         
         # Build the Normalizing Flow. The base distribution is a simple 6D Gaussian
         base_dist = StandardNormal(shape=[param_dim])
