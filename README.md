@@ -110,7 +110,7 @@ This project relies on several open-source libraries. For further reading on the
 * [nflows](https://github.com/bayesiains/nflows): normalizing flows in PyTorch.
 * [qnm](https://qnm.readthedocs.io/en/latest/README.html#): package for computing the complex frequencies andamplitude parameters for the QNM of a remnant black hole, as well as their decomposition in spheroidal harmonics.
 * [NumPy](https://numpy.org/doc/2.1/index.html), [SciPy](https://scipy.org/es/) & [Matplotlib](https://matplotlib.org): Standard libraries for mathematical operations and results visualization.
-* [corner](https://corner.readthedocs.io/en/latest/):Used to visualize multi-dimensional parameter distributions usingdense scatterplot matrices and contour intervals.
+* [corner](https://corner.readthedocs.io/en/latest/): Used to visualize multi-dimensional parameter distributions usingdense scatterplot matrices and contour intervals.
 
 ### References
 * > Gregory Ashton et al., _BILBY: A user-friendly Bayesian inference library for gravitational-wave astronomy_, The Astrophysical Journal Supplement Series (2019) 241, 27. [[arXiv]](https://arxiv.org/abs/1811.02042)
