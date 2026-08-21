@@ -56,12 +56,11 @@ def train():
     )
     
     # Initialize model using architecture settings from config
+    seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
+
     model = RingdownPosterior(
-        in_channels=config['model']['in_channels'],
-        param_dim=config['model']['param_dim'],
-        context_dim=config['model']['context_dim'],
-        hidden_features=config['model']['hidden_features'],
-        num_transforms=config['model']['num_transforms']
+        sequence_length=seq_len,
+        model_config=config['model']
     ).float().to(device)
     
     optimizer = Adam(model.parameters(), lr=learning_rate)

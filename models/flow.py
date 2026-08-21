@@ -5,7 +5,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 import torch.nn as nn
 
-# nflows imports for the Normalizing Flow architecture
 from nflows.flows.base import Flow
 from nflows.distributions.normal import StandardNormal
 from nflows.transforms.base import CompositeTransform
@@ -15,16 +14,18 @@ from nflows.transforms.permutations import ReversePermutation
 from models.embedding import WaveformEmbedding
 
 class RingdownPosterior(nn.Module):
-    def __init__(self, in_channels=1, param_dim=6, context_dim=64, hidden_features=128, num_transforms=5):
+    def __init__(self, sequence_length, model_config):
         """
         Combines the 1D CNN with a Normalizing Flow to predict parameter posteriors.
         
         Parameters:
-        - in_channels: The number of input channels for the CNN (default 1).
-        - param_dim: The number of physical parameters to predict (default 6).
-        - context_dim: The number of features extracted by the CNN (default 64).
-        - hidden_features: Width of the internal neural networks inside the flow (default 128).
-        - num_transforms: Number of flow layers - depth of the statistical engine (default 5).
+        - sequence_length: The length of the input waveform.
+        - model_config: A dictionary containing the model configuration parameters.
+            - in_channels: Number of input channels (default 1).
+            - param_dim: Dimensionality of the parameter space.
+            - context_dim: Dimensionality of the context vector from the CNN.
+            - hidden_features: Number of hidden features in the autoregressive transforms.
+            - num_transforms: Number of autoregressive transforms to chain together in the flow.
 
         Returns:
         - A complete neural architecture that can be trained to predict posteriors from observed waveforms
@@ -32,9 +33,19 @@ class RingdownPosterior(nn.Module):
 
         # Initialize the RingdownPosterior Module
         super(RingdownPosterior, self).__init__()
+
+        param_dim = model_config['param_dim']
+        context_dim = model_config['context_dim']
+        hidden_features = model_config['hidden_features']
+        num_transforms = model_config['num_transforms']
+        embedding_config = model_config['embedding_net']
         
         # The Feature Extractor (CNN)
-        self.embedding_net = WaveformEmbedding(in_channels=in_channels, output_dim=context_dim)
+        self.embedding_net = WaveformEmbedding(
+            sequence_length=sequence_length, 
+            embedding_config=embedding_config,
+            output_dim=context_dim
+        )
         
         # Build the Normalizing Flow. The base distribution is a simple 6D Gaussian
         base_dist = StandardNormal(shape=[param_dim])
@@ -62,7 +73,7 @@ class RingdownPosterior(nn.Module):
         Calculates the Negative Log-Likelihood (NLL) of the true parameters given the data.
 
         Parameters:
-        - strain_data: A batch of observed waveforms (shape: [batch_size, 1, 256])
+        - strain_data: A batch of observed waveforms (shape: [batch_size, in_channels, sequence_length])
         - target_parameters: The true physical parameters corresponding to the waveforms
 
         Returns:
@@ -83,7 +94,7 @@ class RingdownPosterior(nn.Module):
         Generates predicted parameter combinations for an observed waveform.
 
         Parameters:
-        - strain_data: A single observed waveform (shape: [1, 1, 256])
+        - strain_data: A single observed waveform (shape: [1, in_channels, sequence_length])
         - num_samples: The number of posterior samples to generate (default 1000)
 
         Returns:
@@ -96,20 +107,20 @@ class RingdownPosterior(nn.Module):
 
 ''' QUICK TEST '''
 if __name__ == "__main__":
-    # Simulate a batch of 32 observed waveforms and their 32 true parameter sets
-    dummy_strain = torch.randn(32, 1, 256)
+    test_len = 256
+    dummy_strain = torch.randn(32, 1, test_len)
     dummy_params = torch.randn(32, 6)
     
-    # Initialize the complete brain
-    model = RingdownPosterior()
+    test_config = {
+        'param_dim': 6, 'context_dim': 64, 'hidden_features': 128, 'num_transforms': 5,
+        'embedding_net': {
+            'in_channels': 1, 'channels': [16, 32, 64],
+            'kernel_size': 9, 'padding': 4, 'stride': 1, 'dilation': 1,
+            'pool_size': 2, 'pool_stride': 2, 'pool_padding': 0, 'pool_dilation': 1
+        }
+    }
     
-    # Test the forward pass (Training Mode)
+    model = RingdownPosterior(sequence_length=test_len, model_config=test_config)
     loss = model(dummy_strain, dummy_params)
     print(f"Calculated Training Loss (NLL): {loss.item():.4f}")
-    
-    # Test the sample pass (Inference Mode on a single waveform)
-    single_waveform = dummy_strain[0:1] # Take just the first waveform
-    predicted_samples = model.sample(single_waveform, num_samples=500)
-    print(f"Generated {predicted_samples.shape[1]} posterior samples for inference.")
-    print("Full neural architecture is complete and ready for training!")
     

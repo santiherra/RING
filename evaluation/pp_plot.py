@@ -49,12 +49,11 @@ def run_pp_analysis():
     print(f"Running P-P Plot Analysis on {device} across {num_test_events} test events...")
 
     # Load Model
+    seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
+
     model = RingdownPosterior(
-        in_channels=config['model']['in_channels'],
-        param_dim=config['model']['param_dim'],
-        context_dim=config['model']['context_dim'],
-        hidden_features=config['model']['hidden_features'],
-        num_transforms=config['model']['num_transforms']
+        sequence_length=seq_len,
+        model_config=config['model']
     ).float().to(device)
     
     try:

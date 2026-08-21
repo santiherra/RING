@@ -46,10 +46,11 @@ def run_inference():
     print(f"Loading model on {device} from {save_path}...")
 
     # Load the trained network using the architecture settings from config
+    seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
+
     model = RingdownPosterior(
-        context_dim=config['model']['context_dim'],
-        hidden_features=config['model']['hidden_features'],
-        num_transforms=config['model']['num_transforms']
+        sequence_length=seq_len,
+        model_config=config['model']
     ).float().to(device)
 
     try:
