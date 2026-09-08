@@ -14,16 +14,16 @@ def generate_noise(duration, sample_rate, psd=None):
     - noise_td: 1D Numpy array of time-domain noise samples
     """
 
-    # Calculate the number of samples based on duration and sample rate
+    # Number of samples
     num_samples = int(duration * sample_rate)
     
     if psd is None:
         psd = bilby.gw.detector.PowerSpectralDensity.from_aligo()
         
-    # Unpack the tuple. Bilby returns (noise_data, frequencies)
+    # Unpack (noise_data, frequencies)
     noise_fd, _ = psd.get_noise_realisation(sample_rate, duration)
     
-    # Transform to the time domain (This yields a 1D array of exactly 256 points)
+    # Transform to time domain (1D array, duration * sample_rate)
     noise_td = np.fft.irfft(noise_fd, n=num_samples) * sample_rate
     
     return noise_td
@@ -49,34 +49,35 @@ if __name__ == "__main__":
     logging.getLogger('bilby').setLevel(logging.WARNING)
     test_psd = bilby.gw.detector.PowerSpectralDensity.from_aligo()
     
-    # Generate the noise
+    # Generate noise
     noise = generate_noise(duration=test_duration, sample_rate=test_sample_rate, psd=test_psd)
     
-    # Generate a physical waveform (Scaled to a realistic 5e-21 strain)
+    # Generate a physical waveform
     physical_scale = 5e-21
     t, hp, hx = generate_ringdown(
             Mf=65.0, af=0.7, 
-            C_re_0=1.0 * physical_scale, C_im_0=0.5 * physical_scale, 
-            C_re_1=0.8 * physical_scale, C_im_1=-0.2 * physical_scale, 
-            iota=0.5, phi=1.2,
+            x_p_0=1.0 * physical_scale, y_p_0=0.5 * physical_scale, 
+            x_c_0=0.8 * physical_scale, y_c_0=-0.2 * physical_scale, 
+            x_p_1=0.5 * physical_scale, y_p_1=0.2 * physical_scale, 
+            x_c_1=0.4 * physical_scale, y_c_1=-0.1 * physical_scale,
             duration=test_duration,
             sample_rate=test_sample_rate
         )
 
-    # Project it to a detector
+    # Projection into a detector
     h_observed = project_to_detector(
             hp, hx, 
             ra=1.5, dec=-0.5, psi=0.8, gps_time=1420950000.0, 
             detector="H1"
         )
     
-    # Add them together to create the raw detector strain
+    # Raw detector strain
     raw_signal = h_observed + noise
 
-    # Plot the exact physical representation
+    # Plot
     plt.figure(figsize=(10, 4))
     
-    # Plot the raw signal and the physical ringdown waveform
+    # Raw signal and physical ringdown waveform
     plt.plot(t, raw_signal, color='lightgray', label='Raw Signal + Noise', zorder=0)
     plt.plot(t, h_observed, color='orange', label='Raw Ringdown', zorder=5)
     

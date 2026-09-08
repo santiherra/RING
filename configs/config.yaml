@@ -1,19 +1,17 @@
-# Physics Engine Settings
+# Physics engine settings
 physics:
   sample_rate: 4096
   duration: 0.0625
   scale: 1e-21
 
-# Target Event (Extrinsic Parameters)
+# Target event (Extrinsic parameters)
 event:
-  fixed_iota: 0.5
-  fixed_phi: 1.2
   fixed_ra: 1.5
   fixed_dec: -0.5
   fixed_psi: 0.8
   fixed_gps: 1420950000.0
 
-# Prior Boundaries (Intrinsic Parameters)
+# Prior boundaries (Intrinsic parameters)
 priors:
   mass_min: 50.0
   mass_max: 100.0
@@ -22,27 +20,25 @@ priors:
   amp_min: -5.0
   amp_max: 5.0
 
-# Neural Architecture
+# Neural architecture
 model:
-  param_dim: 6
+  param_dim: 10
   context_dim: 64
   hidden_features: 128
   num_transforms: 5
   embedding_net:
     in_channels: 1
     channels: [16, 32, 64]
-    # Conv1d Parameters
     kernel_size: 9
     padding: 4
     stride: 1
     dilation: 1
-    # MaxPool1d Parameters
     pool_size: 2
     pool_stride: 2
     pool_padding: 0
     pool_dilation: 1
 
-# Training Hyperparameters
+# Training hyperparameters
 training:
   epochs: 100
   batch_size: 64
@@ -51,8 +47,14 @@ training:
   num_val_samples: 512
   save_dir: "saved_models/best_ringdown_model.pth"
 
-# Pipeline Diagnostics (Optional Outputs, set to false to disable)
+# Single event inference settings
+inference:
+  num_samples: 2000
+
+# Pipeline diagnostics
 diagnostics:
+  compute_snr: true 
+  save_history_data: true
   plot_loss_curve: true
   plot_snr_distribution: true
   pp_plot:

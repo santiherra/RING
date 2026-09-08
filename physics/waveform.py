@@ -1,32 +1,13 @@
 import numpy as np
 import qnm
 
-# Conversion factor: Solar Mass to Seconds (G * M_sun / c^3)
+# Conversion factor: Solar mass to seconds (G * M_sun / c^3)
 M_SUN_S = 4.925491025543575e-6 
 
-def spin_weighted_spherical_harmonic(iota, phi, l=2, m=2):
-    """
-    Calculates the s = -2 spin-weighted spherical harmonic (Approximating spheroidal as spherical for the 
-    baseline network architecture).
-
-    Parameters:
-    - iota: Inclination angle (radians)
-    - phi: Azimuthal angle (radians)
-    - l: Spherical harmonic degree (default 2)
-    - m: Spherical harmonic projection (default 2)
-
-    Returns:
-    - Y_lm: Complex value of the spin-weighted spherical harmonic at the given angles.
-    """
-
-    # Amplitude for s=-2, l=2, m=2
-    amplitude = np.sqrt(5.0 / (64.0 * np.pi)) * (1.0 + np.cos(iota))**2
-    
-    # Complex angular dependence
-    return amplitude * np.exp(2j * phi)
-
-def generate_ringdown(Mf, af, C_re_0, C_im_0, C_re_1, C_im_1, 
-                      iota, phi, sample_rate=4096, duration=0.05):
+def generate_ringdown(Mf, af, 
+                      x_p_0, y_p_0, x_c_0, y_c_0, 
+                      x_p_1, y_p_1, x_c_1, y_c_1, 
+                      sample_rate=4096, duration=0.05):
     """
     Generates the time-domain ringdown waveform h_+ and h_x 
     for the (2,2,0) and (2,2,1) modes using Cartesian amplitudes.
@@ -34,49 +15,44 @@ def generate_ringdown(Mf, af, C_re_0, C_im_0, C_re_1, C_im_1,
     Parameters:
     - Mf: Remnant mass in Solar Masses
     - af: Dimensionless remnant spin (0 to 1)
-    - C_re_0, C_im_0: Cartesian amplitude components for fundamental mode (2,2,0)
-    - C_re_1, C_im_1: Cartesian amplitude components for first overtone (2,2,1)
-    - iota, phi: Fixed inclination and azimuthal angle of the binary
+    - x_p_0, y_p_0, x_c_0, y_c_0: Cartesian amplitude components for fundamental mode (2,2,0)
+    - x_p_1, y_p_1, x_c_1, y_c_1: Cartesian amplitude components for first overtone (2,2,1)
     - sample_rate: Detector sampling rate (default 4096)
     - duration: Length of the ringdown signal to generate in seconds (default 0.05s)
 
     Returns:
     - t: Time array (seconds)
-    - hp: Plus polarization strain array
-    - hx: Cross polarization strain array
+    - hp: Plus polarisation strain array
+    - hx: Cross polarisation strain array
     """
     
-    # Create the physical time array (in seconds). Network default: t = 0 at the start of the ringdown
     t = np.arange(0, duration, 1.0 / sample_rate)
-    
-    # Dimensionless time
     t_dim = t / (Mf * M_SUN_S)
     
-    # Fetch complex frequencies for the QNM (fundamental mode n = 0, and overtone n= 1)
+    # QNM: fundamental mode (2, 2, 0), first overtone (2, 2, 1)
     mode_0 = qnm.modes_cache(s=-2, l=2, m=2, n=0)
     mode_1 = qnm.modes_cache(s=-2, l=2, m=2, n=1)
     
-    # Fetch omega using the exact keyword argument 'a' required by KerrSpinSeq
-    omega_0, _, _ = mode_0(a=af)
-    omega_1, _, _ = mode_1(a=af)
+    # Complex dimensionless frequencies
+    omega_complex_0, _, _ = mode_0(a=af)
+    omega_complex_1, _, _ = mode_1(a=af)
     
-    # Construct the complex amplitudes from Cartesian inputs
-    A_0 = C_re_0 + 1j * C_im_0
-    A_1 = C_re_1 + 1j * C_im_1
+    omega_0 = np.real(omega_complex_0)
+    gamma_0 = -np.imag(omega_complex_0)
     
-    # Build the temporal part of the waveform: sum_n A_n * exp(-i * omega_n * t_dim)
-    strain_time = (A_0 * np.exp(-1j * omega_0 * t_dim) + 
-                   A_1 * np.exp(-1j * omega_1 * t_dim))
+    omega_1 = np.real(omega_complex_1)
+    gamma_1 = -np.imag(omega_complex_1)
     
-    # Apply the angular dependence
-    Y_22 = spin_weighted_spherical_harmonic(iota, phi)
+    # Polarisations, fundamental mode (n=0)
+    hp_0 = np.exp(-gamma_0 * t_dim) * (x_p_0 * np.cos(omega_0 * t_dim) + y_p_0 * np.sin(omega_0 * t_dim))
+    hc_0 = np.exp(-gamma_0 * t_dim) * (x_c_0 * np.cos(omega_0 * t_dim) + y_c_0 * np.sin(omega_0 * t_dim))
+
+    # Polarisations, first overtone (n=1)
+    hp_1 = np.exp(-gamma_1 * t_dim) * (x_p_1 * np.cos(omega_1 * t_dim) + y_p_1 * np.sin(omega_1 * t_dim))
+    hc_1 = np.exp(-gamma_1 * t_dim) * (x_c_1 * np.cos(omega_1 * t_dim) + y_c_1 * np.sin(omega_1 * t_dim))
     
-    # Full complex strain: h_+ - i h_x
-    h_complex = strain_time * Y_22
-    
-    # Separate into plus and cross polarizations
-    hp = np.real(h_complex)
-    hx = -np.imag(h_complex)
+    hp = hp_0 + hp_1
+    hx = hc_0 + hc_1
     
     return t, hp, hx
 
@@ -84,12 +60,11 @@ def generate_ringdown(Mf, af, C_re_0, C_im_0, C_re_1, C_im_1,
 ''' QUICK TEST '''
 
 if __name__ == "__main__":
-    # Example using roughly GW250114-like parameters
+    # Example: GW250114
     t, hp, hx = generate_ringdown(
         Mf=65.0, af=0.7, 
-        C_re_0=1.0, C_im_0=0.5, 
-        C_re_1=0.8, C_im_1=-0.2, 
-        iota=0.5, phi=1.2
+        x_p_0=1.0, y_p_0=0.5, x_c_0=0.8, y_c_0=-0.2, 
+        x_p_1=0.5, y_p_1=0.2, x_c_1=0.4, y_c_1=-0.1
     )
     print(f"Generated {len(t)} data points.")
     print(f"h_plus preview: {hp[:5]}")

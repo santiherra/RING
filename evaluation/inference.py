@@ -22,7 +22,7 @@ def run_inference():
     Generates posterior samples and plots the results against the true parameters.
     '''
 
-    # Load Config
+    # Load configuration
     parser = argparse.ArgumentParser(description="Run inference on a generated waveform.")
     parser.add_argument("--config", type=str, default="configs/config.yaml", 
                         help="Path to the configuration file relative to project root.")
@@ -35,7 +35,7 @@ def run_inference():
     save_path = os.path.join(project_root, config['training']['save_dir'])
     print(f"Looking for model at:  {save_path}")
 
-    # Device Configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for MPS, then CUDA, else CPU.
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -69,18 +69,22 @@ def run_inference():
     signal_tensor = signal_tensor.unsqueeze(0).to(device)
     true_snr = snr_tensor.item()
 
-    print(f"Test Waveform Generated. True Optimal SNR: {true_snr:.2f}")
+    print(f"Test waveform generated. True optimal SNR: {true_snr:.2f}")
 
-    # Generate Posterior Samples
+    # Generate posterior samples
     print("Running statistical inference...")
+    num_samples = config.get('inference', {}).get('num_samples', 2000)
+    
     with torch.no_grad():
-        samples = model.sample(signal_tensor, num_samples=2000)
+        samples = model.sample(signal_tensor, num_samples=num_samples)
 
     samples = samples.squeeze(0).cpu().numpy()
     true_params = true_params.numpy()
 
-    # Raw Cartesian Corner Plot
-    labels_cart = [r"$M_f$", r"$a_f$", r"$C_{re,0}$", r"$C_{im,0}$", r"$C_{re,1}$", r"$C_{im,1}$"]
+    # Cartesian corner plot
+    labels_cart = [r"$M_f$", r"$a_f$", 
+                   r"$x_{+,0}$", r"$y_{+,0}$", r"$x_{\times,0}$", r"$y_{\times,0}$",
+                   r"$x_{+,1}$", r"$y_{+,1}$", r"$x_{\times,1}$", r"$y_{\times,1}$"]
     
     fig_cart = corner.corner(
         samples, 
@@ -92,28 +96,35 @@ def run_inference():
         color='royalblue',
         truth_color='red'
     )
-    fig_cart.suptitle(f"Cartesian Parameters Corner Plot (Injected SNR: {true_snr:.1f})", fontsize=16)
+    fig_cart.suptitle(f"Corner plot, cartesian parameters (Injected SNR: {true_snr:.1f})", fontsize=16)
     plt.show()
 
-    # Physical Mode Resolution Corner Plot
+    # Polar corner plot
+    def cart_to_polar(x_p, y_p, x_c, y_c):
+        term1 = np.sqrt((x_p + y_c)**2 + (x_c - y_p)**2)
+        term2 = np.sqrt((x_p - y_c)**2 + (x_c + y_p)**2)
+        A = 0.5 * (term1 + term2)
+        denom = term1 + term2
+        eps = np.where(denom > 0, (term1 - term2) / denom, 0.0)
+        theta = -0.5 * (np.arctan2(-x_c + y_p, y_c + x_p) + np.arctan2(-x_c - y_p, -y_c + x_p))
+        phi = 0.5 * (np.arctan2(-x_c + y_p, y_c + x_p) - np.arctan2(-x_c - y_p, -y_c + x_p))
+        return A, eps, theta, phi
+
     samples_polar = np.zeros_like(samples)
     samples_polar[:, 0] = samples[:, 0]  # Mf
     samples_polar[:, 1] = samples[:, 1]  # af
-    samples_polar[:, 2] = np.sqrt(samples[:, 2]**2 + samples[:, 3]**2)  # A_0
-    samples_polar[:, 3] = np.arctan2(samples[:, 3], samples[:, 2])     # phi_0
-    samples_polar[:, 4] = np.sqrt(samples[:, 4]**2 + samples[:, 5]**2)  # A_1
-    samples_polar[:, 5] = np.arctan2(samples[:, 5], samples[:, 4])     # phi_1
+    samples_polar[:, 2:6] = np.column_stack(cart_to_polar(samples[:,2], samples[:,3], samples[:,4], samples[:,5])) 
+    samples_polar[:, 6:10] = np.column_stack(cart_to_polar(samples[:,6], samples[:,7], samples[:,8], samples[:,9]))
 
-    # Transform truth values
+    # Transform values
     true_polar = np.zeros_like(true_params)
-    true_polar[0] = true_params[0]
-    true_polar[1] = true_params[1]
-    true_polar[2] = np.sqrt(true_params[2]**2 + true_params[3]**2)
-    true_polar[3] = np.arctan2(true_params[3], true_params[2])
-    true_polar[4] = np.sqrt(true_params[4]**2 + true_params[5]**2)
-    true_polar[5] = np.arctan2(true_params[5], true_params[4])
+    true_polar[0], true_polar[1] = true_params[0], true_params[1] # Mf, af
+    true_polar[2:6] = cart_to_polar(true_params[2], true_params[3], true_params[4], true_params[5]) # A_0, eps_0, theta_0, phi_0
+    true_polar[6:10] = cart_to_polar(true_params[6], true_params[7], true_params[8], true_params[9]) # A_1, eps_1, theta_1, phi_1
 
-    labels_polar = [r"$M_f$", r"$a_f$", r"$A_0$", r"$\phi_0$", r"$A_1$", r"$\phi_1$"]
+    labels_polar = [r"$M_f$", r"$a_f$", 
+                    r"$A_0$", r"$\epsilon_0$", r"$\theta_0$", r"$\phi_0$",
+                    r"$A_1$", r"$\epsilon_1$", r"$\theta_1$", r"$\phi_1$"]
     
     fig_polar = corner.corner(
         samples_polar,
@@ -125,7 +136,7 @@ def run_inference():
         color='seagreen',
         truth_color='red'
     )
-    fig_polar.suptitle(f"Physical Mode Resolution Corner Plot (Injected SNR: {true_snr:.1f})", fontsize=16)
+    fig_polar.suptitle(f"Corner plot, polar parameters (Injected SNR: {true_snr:.1f})", fontsize=16)
     plt.show()
 
 

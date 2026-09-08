@@ -33,7 +33,7 @@ class RingdownDataset(Dataset):
 
         self.num_samples = num_samples
         
-        # Load configuration dictionary if not explicitly provided
+        # Load configuration dictionary
         if config is None:
             config = load_config(config_path)
         self.config = config
@@ -43,15 +43,13 @@ class RingdownDataset(Dataset):
         self.duration = config['physics']['duration']
         self.scale = float(config['physics']['scale'])
         
-        # Fixed Extrinsic Parameters
-        self.fixed_iota = config['event']['fixed_iota']
-        self.fixed_phi = config['event']['fixed_phi']
+        # Fixed extrinsic parameters
         self.fixed_ra = config['event']['fixed_ra']
         self.fixed_dec = config['event']['fixed_dec']
         self.fixed_psi = config['event']['fixed_psi']
         self.fixed_gps = config['event']['fixed_gps']
 
-        # Prior Boundaries
+        # Prior boundaries
         self.mass_min = config['priors']['mass_min']
         self.mass_max = config['priors']['mass_max']
         self.spin_min = config['priors']['spin_min']
@@ -59,14 +57,13 @@ class RingdownDataset(Dataset):
         self.amp_min = config['priors']['amp_min']
         self.amp_max = config['priors']['amp_max']
 
-        # Initialize PSD object once
+        # Initialize PSD object
         self.psd = bilby.gw.detector.PowerSpectralDensity.from_aligo()
 
     def __len__(self):
         '''
         Returns the number of samples in the dataset.
         '''
-
         return self.num_samples
 
     def __getitem__(self, idx):
@@ -83,62 +80,60 @@ class RingdownDataset(Dataset):
                          (shape: [6], containing [Mf, af, C_re_0, C_im_0, C_re_1, C_im_1])
         '''
         
-        # Randomly sample target intrinsic parameters
+        # Sample target intrinsic parameters
         Mf = np.random.uniform(self.mass_min, self.mass_max)
         af = np.random.uniform(self.spin_min, self.spin_max)
         
-        # Cartesian amplitudes generated at physical scale
-        C_re_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
-        C_im_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
-        C_re_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
-        C_im_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        # Cartesian quadratures
+        x_p_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        y_p_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        x_c_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        y_c_0 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
         
-        # Generate physics waveform
+        x_p_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        y_p_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        x_c_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        y_c_1 = np.random.uniform(self.amp_min, self.amp_max) * self.scale
+        
         t, hp, hx = generate_ringdown(
             Mf=Mf, af=af, 
-            C_re_0=C_re_0, C_im_0=C_im_0, C_re_1=C_re_1, C_im_1=C_im_1, 
-            iota=self.fixed_iota, phi=self.fixed_phi, 
+            x_p_0=x_p_0, y_p_0=y_p_0, x_c_0=x_c_0, y_c_0=y_c_0,
+            x_p_1=x_p_1, y_p_1=y_p_1, x_c_1=x_c_1, y_c_1=y_c_1,
             sample_rate=self.sample_rate, duration=self.duration
         )
         
-        # Project to detector
         h_det = project_to_detector(
             hp=hp, hx=hx, 
             ra=self.fixed_ra, dec=self.fixed_dec, psi=self.fixed_psi, gps_time=self.fixed_gps, 
             detector="H1"
         )
 
-        # SNR Calculation 
-        # Transform pure signal to frequency domain
-        h_fd = np.fft.rfft(h_det) * (1.0 / self.sample_rate)
-        freqs = np.fft.rfftfreq(len(h_det), d=1.0 / self.sample_rate)
+        compute_snr = self.config.get('diagnostics', {}).get('compute_snr', True)
+        if compute_snr:
+            h_fd = np.fft.rfft(h_det) * (1.0 / self.sample_rate)
+            freqs = np.fft.rfftfreq(len(h_det), d=1.0 / self.sample_rate)
+            psd_interp = self.psd.power_spectral_density_interpolated(freqs)
+            valid_idx = psd_interp > 0
+            snr_sq = 0.0
+            if np.any(valid_idx):
+                df = 1.0 / self.duration
+                snr_sq = 4.0 * np.sum((np.abs(h_fd[valid_idx])**2) / psd_interp[valid_idx]) * df
+            optimal_snr = np.sqrt(snr_sq)
+        else:
+            optimal_snr = -1.0
         
-        # Interpolate PSD to match frequency bins
-        psd_interp = self.psd.power_spectral_density_interpolated(freqs)
-        
-        # Compute optimal matched filter SNR 
-        valid_idx = psd_interp > 0
-        snr_sq = 0.0
-        if np.any(valid_idx):
-            df = 1.0 / self.duration
-            snr_sq = 4.0 * np.sum((np.abs(h_fd[valid_idx])**2) / psd_interp[valid_idx]) * df
-        
-        optimal_snr = np.sqrt(snr_sq)
-        
-        # Generate colored noise
         noise = generate_noise(duration=self.duration, sample_rate=self.sample_rate, psd=self.psd)
         
-        # Combine and scale for PyTorch
         noisy_signal = h_det + noise
         scaled_signal = noisy_signal * (1.0 / self.scale)
         
-        # Format Tensors
         signal_tensor = torch.tensor(scaled_signal, dtype=torch.float32).unsqueeze(0)
         
-        params_tensor = torch.tensor(
-            [Mf, af, C_re_0 / self.scale, C_im_0 / self.scale, C_re_1 / self.scale, C_im_1 / self.scale], 
-            dtype=torch.float32
-        )
+        params_tensor = torch.tensor([
+            Mf, af, 
+            x_p_0 / self.scale, y_p_0 / self.scale, x_c_0 / self.scale, y_c_0 / self.scale,
+            x_p_1 / self.scale, y_p_1 / self.scale, x_c_1 / self.scale, y_c_1 / self.scale
+        ], dtype=torch.float32)
 
         snr_tensor = torch.tensor([optimal_snr], dtype=torch.float32)
         

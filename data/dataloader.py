@@ -25,7 +25,7 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
     # Load configuration dictionary
     config = load_config(config_path)
     
-    # Fallback to config values if arguments are not explicitly passed
+    # Config values
     if num_train is None:
         num_train = config['training']['num_train_samples']
     if num_val is None:
@@ -33,7 +33,7 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
     if batch_size is None:
         batch_size = config['training']['batch_size']
     
-    # Instantiate dataset factory with config
+    # Initialize dataset with config
     train_dataset = RingdownDataset(num_samples=num_train, config=config)
     val_dataset = RingdownDataset(num_samples=num_val, config=config)
     

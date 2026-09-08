@@ -20,7 +20,7 @@ def run_pp_analysis():
     '''
     Run P-P plot analysis for the RingdownPosterior model.
     '''
-    # Load Configuration
+    # Load configuration
     parser = argparse.ArgumentParser(description="Run P-P Plot Calibration.")
     parser.add_argument("--config", type=str, default="configs/config.yaml", 
                         help="Path to the configuration file relative to project root.")
@@ -38,7 +38,7 @@ def run_pp_analysis():
     diagnostics_dir = os.path.join(project_root, "diagnostics")
     os.makedirs(diagnostics_dir, exist_ok=True)
 
-    # Device Configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for MPS, then CUDA, else CPU.
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -48,7 +48,7 @@ def run_pp_analysis():
         
     print(f"Running P-P Plot Analysis on {device} across {num_test_events} test events...")
 
-    # Load Model
+    # Load model
     seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
 
     model = RingdownPosterior(
@@ -64,15 +64,17 @@ def run_pp_analysis():
         
     model.eval()
 
-    # Generate Test Dataset
+    # Test dataset
     print(f"Generating {num_test_events} test waveforms...")
     test_dataset = RingdownDataset(num_samples=num_test_events)
     
     # Target parameter names
-    param_names = [r"$M_f$", r"$a_f$", r"$C_{re,0}$", r"$C_{im,0}$", r"$C_{re,1}$", r"$C_{im,1}$"]
+    param_names = [r"$M_f$", r"$a_f$", 
+                   r"$x_{+,0}$", r"$y_{+,0}$", r"$x_{\times,0}$", r"$y_{\times,0}$",
+                   r"$x_{+,1}$", r"$y_{+,1}$", r"$x_{\times,1}$", r"$y_{\times,1}$"]
     num_params = len(param_names)
     
-    # Matrix to store percentile ranks: shape [num_test_events, num_params]
+    # Matrix of percentile ranks: shape [num_test_events, num_params]
     percentiles = np.zeros((num_test_events, num_params))
 
     # Loop over all test events
@@ -87,7 +89,7 @@ def run_pp_analysis():
             samples = model.sample(signal_tensor, num_samples=num_samples_per_event)
             samples = samples.squeeze(0).cpu().numpy()
 
-        # Calculate percentile rank for each parameter
+        # Percentile rank for each parameter
         for j in range(num_params):
             rank = np.sum(samples[:, j] <= true_params[j]) / num_samples_per_event
             percentiles[i, j] = rank
@@ -101,16 +103,17 @@ def run_pp_analysis():
     # Theoretical cumulative values
     theoretical_cdf = np.linspace(0, 1, num_test_events)
 
-    # Plot 1-sigma, 2-sigma, and 3-sigma confidence intervals
+    # Confidence intervals for 1-sigma, 2-sigma, and 3-sigma
     for ci, alpha, color in zip([0.68, 0.95, 0.997], [0.3, 0.2, 0.1], ['gray', 'lightgray', 'whitesmoke']):
         lower = binom.ppf((1 - ci) / 2, num_test_events, theoretical_cdf) / num_test_events
         upper = binom.ppf(1 - (1 - ci) / 2, num_test_events, theoretical_cdf) / num_test_events
-        plt.fill_between(theoretical_cdf, lower, upper, color=color)
+        plt.fill_between(theoretical_cdf, lower, upper, color=color, alpha=alpha)
 
     plt.plot([0, 1], [0, 1], color='black', linestyle='--', linewidth=1.5) # Diagonal line for perfect calibration
 
     # Empirical CDF for each parameter
-    colors = ['royalblue', 'forestgreen', 'crimson', 'darkorange', 'purple', 'teal']
+    colors = ['royalblue', 'forestgreen', 'crimson', 'darkorange', 
+              'purple', 'teal', 'magenta', 'gold', 'brown', 'navy']
     for j in range(num_params):
         sorted_percentiles = np.sort(percentiles[:, j])
         plt.plot(theoretical_cdf, sorted_percentiles, label=param_names[j], color=colors[j], linewidth=1.8)

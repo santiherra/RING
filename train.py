@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import numpy as np
 import torch
 from torch.optim import Adam
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ def train():
     saves the best model based on validation loss.
     '''
 
-    # Load Configuration
+    # Load configuration file
     parser = argparse.ArgumentParser(description="Train the Ringdown Normalizing Flow.")
     parser.add_argument("--config", type=str, default="configs/config.yaml", 
                         help="Path to the configuration file relative to the project root.")
@@ -30,7 +31,7 @@ def train():
     print(f"Loading configuration from: {config_path}")
     config = load_config(config_path)
     
-    # Device Configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for MPS, then CUDA, else CPU.
     if torch.backends.mps.is_available():
         device = torch.device("mps")
     elif torch.cuda.is_available():
@@ -39,7 +40,7 @@ def train():
         device = torch.device("cpu")
     print(f"Using device: {device}\n")
 
-    # Read Hyperparameters from Config
+    # Read hyperparameters from config file
     epochs = config['training']['epochs']
     batch_size = config['training']['batch_size']
     learning_rate = config['training']['learning_rate']
@@ -47,7 +48,7 @@ def train():
     num_val = config['training']['num_val_samples']
     
     # Initialize DataLoaders 
-    print("Generating signal dataset... (This may take a moment)")
+    print("Generating signal dataset...")
     train_loader, val_loader = get_dataloaders(
         num_train=num_train, 
         num_val=num_val, 
@@ -55,7 +56,7 @@ def train():
         config_path=config_path
     )
     
-    # Initialize model using architecture settings from config
+    # Initialize model
     seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
 
     model = RingdownPosterior(
@@ -67,21 +68,19 @@ def train():
 
     print("Starting training process...\n")
 
-    # Resolve absolute path to guarantee saving inside the project root
+    # Save the model
     project_root = os.path.dirname(os.path.abspath(__file__))
     save_path = os.path.join(project_root, config['training']['save_dir'])
     
-    # Ensure the parent folder exists (exist_ok=True reuses the existing folder)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     best_val_loss = float('inf')
 
-    # Arrays to track the learning process
     history_train_loss = []
     history_val_loss = []
     tracked_snrs = []
     
-    # The Epoch loop
+    # The epoch loop
     for epoch in range(epochs):
         start_time = time.time()
         
@@ -89,12 +88,12 @@ def train():
         model.train()
         train_loss = 0.0
 
-        # For each batch, perform a forward pass, compute the loss, backpropagate, and update the model parameters.
+        # For each batch perform a forward pass, compute the loss, backpropagate, and update the model parameters
         for batch_idx, (signals, targets, snrs) in enumerate(train_loader):
             signals = signals.float().to(device)
             targets = targets.float().to(device)
 
-            if epoch == 0:
+            if epoch == 0 and config.get('diagnostics', {}).get('compute_snr', True):
                 tracked_snrs.extend(snrs.flatten().tolist())
             
             optimizer.zero_grad()
@@ -128,34 +127,49 @@ def train():
         print(f"Epoch [{epoch+1}/{epochs}].  Time: {epoch_time:.1f}s.  "
               f"Train Loss: {avg_train_loss:.4f}.  Val Loss: {avg_val_loss:.4f}")
         
-        # Save / overwrite the model directly inside saved_models/
+        # Save the model inside saved_models/
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             torch.save(model.state_dict(), save_path)
             
-    print("-" * 30)
-    print(f"Training Complete! Model saved directly to: '{save_path}'")
+    print(f"Training Complete. Model saved directly to: '{save_path}'")
 
-    # Generate Diagnostics (Only if plot_loss_curve: 'true' in config.yaml)
+    # Generate Diagnostics if 'true' in config.yaml
     diagnostics_dir = os.path.join(project_root, "diagnostics")
     os.makedirs(diagnostics_dir, exist_ok=True)
 
+    if config.get('diagnostics', {}).get('save_history_data', False):
+        print("Saving training data...")
+        
+        losses_data = np.column_stack((history_train_loss, history_val_loss))
+        np.savetxt(
+            os.path.join(diagnostics_dir, "losses.txt"), 
+            losses_data, 
+            header="Train_Loss Val_Loss", 
+            comments=''
+        )
+        
+        if config.get('diagnostics', {}).get('compute_snr', True):
+            np.savetxt(
+                os.path.join(diagnostics_dir, "snr_data.txt"), 
+                tracked_snrs, 
+                header="Optimal_SNR", 
+                comments=''
+            )
+
     if config.get('diagnostics', {}).get('plot_loss_curve', False):
-        print("Generating training diagnostic plots...")
-        
-        diagnostics_dir = os.path.join(project_root, "diagnostics")
-        os.makedirs(diagnostics_dir, exist_ok=True)
-        
+        print("Generating loss curve plot...")
         plt.figure(figsize=(10, 6))
         plt.plot(range(1, epochs + 1), history_train_loss, label='Training Loss', color='royalblue', linewidth=2)
         plt.plot(range(1, epochs + 1), history_val_loss, label='Validation Loss', color='darkorange', linewidth=2)
         plt.xlabel('Epoch')
-        plt.title('Neural Network Learning Curve')
         plt.ylim(0, 20)
+        plt.title('Dataset Learning Curves')
         plt.legend()
         
         curve_path = os.path.join(diagnostics_dir, "loss_curve.png")
         plt.savefig(curve_path, dpi=300, bbox_inches='tight')
+        plt.close() # Free up memory
         print(f"Loss curve saved to: '{curve_path}'")
 
     if config.get('diagnostics', {}).get('plot_snr_distribution', False):

@@ -86,7 +86,7 @@ The repository is modularly designed, separating the physics generation, deep le
         python evaluation/pp_plot.py --config configs/config.yaml
         ```
     * `diagnostics/`
-    Auto-generated folder where the pipeline saves visual benchmarking tools, including Negative Log-Likelihood (NLL) learning curves, optimal matched filter SNR distributions, and P-P plots.
+    Auto-generated folder where the pipeline saves visual and data benchmarking tools, including Negative Log-Likelihood (NLL) learning curves, optimal matched filter SNR distributions and P-P plots, whenever each of these options are set to `true` in the configuration file.
     * `physics/`
         * `waveform.py`: Generates the pure, mathematical ringdown waveforms using quasinormal modes (QNM).
         * `detector.py`: Projects the pure waveform onto the Advanced LIGO (H1) detector antenna pattern based on sky location and GPS time.

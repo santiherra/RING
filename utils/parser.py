@@ -13,12 +13,12 @@ def load_config(config_path="configs/config.yaml"):
     - A dictionary containing the configuration parameters.
     """
 
-    # If the path is relative, resolve it against the project root
+    # Resolve relative path against the project root
     if not os.path.isabs(config_path):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_path = os.path.join(project_root, config_path)
 
-    # Check if the configuration file exists. If not, raise an error
+    # Check if the configuration file exists
     if not os.path.exists(config_path):
         raise FileNotFoundError(
             f"Configuration file not found at: '{config_path}'. "
