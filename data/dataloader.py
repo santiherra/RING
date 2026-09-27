@@ -34,8 +34,8 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
         batch_size = config['training']['batch_size']
     
     # Initialize dataset with config
-    train_dataset = RingdownDataset(num_samples=num_train, config=config)
-    val_dataset = RingdownDataset(num_samples=num_val, config=config)
+    train_dataset = RingdownDataset(num_samples=num_train, config=config, dataset_type='train')
+    val_dataset = RingdownDataset(num_samples=num_val, config=config, dataset_type='val')
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -47,8 +47,9 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
 
 if __name__ == "__main__":
     train_dl, val_dl = get_dataloaders()
-    for signals, parameters in train_dl:
-        print(f"Batch Signal Tensor Shape: {signals.shape}") 
-        print(f"Batch Parameters Tensor Shape: {parameters.shape}")
+    for hp_b, hx_b, params_b in train_dl:
+        print(f"Batch hp Tensor Shape: {hp_b.shape}") 
+        print(f"Batch hx Tensor Shape: {hx_b.shape}") 
+        print(f"Batch Parameters Tensor Shape: {params_b.shape}")
         break
     print("DataLoaders successfully configured via configs/config.yaml.")

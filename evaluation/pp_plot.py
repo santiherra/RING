@@ -3,7 +3,8 @@ import sys
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import binom
+from scipy.stats import binom, ks_1samp, uniform
+import bilby
 from pathlib import Path
 
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -13,12 +14,14 @@ if project_root not in sys.path:
 
 from models.flow import RingdownPosterior
 from data.dataset import RingdownDataset
+from physics.transforms import get_gpu_noise_and_whiten
 from utils.parser import load_config
 import argparse
+import time
 
 def run_pp_analysis():
     '''
-    Run P-P plot analysis for the RingdownPosterior model.
+    Run P-P plot analysis for the RingdownPosterior model over a set of test events.
     '''
     # Load configuration
     parser = argparse.ArgumentParser(description="Run P-P Plot Calibration.")
@@ -31,8 +34,8 @@ def run_pp_analysis():
     config = load_config(config_path)
 
     pp_config = config.get('diagnostics', {}).get('pp_plot', {})
-    num_test_events = pp_config.get('num_test_events', 100)
-    num_samples_per_event = pp_config.get('num_samples_per_event', 2000)
+    num_test_events = pp_config.get('num_test_events', 1000)
+    num_samples_per_event = pp_config.get('num_samples_per_event', 10000)
     
     save_path = os.path.join(project_root, config['training']['save_dir'])
     diagnostics_dir = os.path.join(project_root, "diagnostics")
@@ -46,10 +49,11 @@ def run_pp_analysis():
     else:
         device = torch.device("cpu")
         
-    print(f"Running P-P Plot Analysis on {device} across {num_test_events} test events...")
+    print(f"Running P-P plot analysis on {device}\n")
 
     # Load model
     seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
+    scale = float(config['physics']['scale'])
 
     model = RingdownPosterior(
         sequence_length=seq_len,
@@ -65,8 +69,25 @@ def run_pp_analysis():
     model.eval()
 
     # Test dataset
-    print(f"Generating {num_test_events} test waveforms...")
-    test_dataset = RingdownDataset(num_samples=num_test_events)
+    print(f"Loading test dataset: {num_test_events} waveforms...")
+    t0_data = time.time()
+    test_dataset = RingdownDataset(num_samples=num_test_events, dataset_type='test')
+    print(f"Test waveforms loaded in {time.time() - t0_data:.2f} s.")
+
+    det = bilby.gw.detector.get_empty_interferometer("H1")
+    F_plus = det.antenna_response(
+        config['event']['fixed_ra'], config['event']['fixed_dec'],
+        config['event']['fixed_gps'], config['event']['fixed_psi'], 'plus'
+    )
+    F_cross = det.antenna_response(
+        config['event']['fixed_ra'], config['event']['fixed_dec'],
+        config['event']['fixed_gps'], config['event']['fixed_psi'], 'cross'
+    )
+
+    freqs = np.fft.rfftfreq(seq_len, d=1.0 / config['physics']['sample_rate'])
+    psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
+    psd_arr = psd_obj.power_spectral_density_interpolated(freqs)
+    asd_tensor = torch.tensor(np.sqrt(psd_arr), dtype=torch.float32, device=device)
     
     # Target parameter names
     param_names = [r"$M_f$", r"$a_f$", 
@@ -75,29 +96,62 @@ def run_pp_analysis():
     num_params = len(param_names)
     
     # Matrix of percentile ranks: shape [num_test_events, num_params]
+    checkpoint_path = os.path.join(diagnostics_dir, "pp_checkpoint.npz")
     percentiles = np.zeros((num_test_events, num_params))
+    start_event = 0
+
+    if os.path.exists(checkpoint_path):
+        print(f"Found checkpoint. Resuming P-P plot...")
+        chkpt = np.load(checkpoint_path)
+        percentiles = chkpt['percentiles']
+        start_event = chkpt['last_event'] + 1
+        print(f"Resuming from event [{start_event + 1}/{num_test_events}]...")
+
+    max_runtime = pp_config.get('max_runtime_minutes', float('inf')) * 60
+    global_start_time = time.time()
+    batch_start_time = time.time()
 
     # Loop over all test events
-    print("Evaluating posteriors...")
-    for i in range(num_test_events):
-        signal_tensor, true_params, _ = test_dataset[i]
-        signal_tensor = signal_tensor.unsqueeze(0).to(device)
-        true_params = true_params.numpy()
+    print("Evaluating posteriors...\n")
+    try:
+        for i in range(start_event, num_test_events):
+            hp_tensor, hx_tensor, true_params = test_dataset[i]
+            
+            hp_tensor = hp_tensor.unsqueeze(0).to(device)
+            hx_tensor = hx_tensor.unsqueeze(0).to(device)
+            true_params = true_params.numpy()
 
-        with torch.no_grad():
-            # Sample posterior from normalizing flow
-            samples = model.sample(signal_tensor, num_samples=num_samples_per_event)
-            samples = samples.squeeze(0).cpu().numpy()
+            signal_tensor, _ = get_gpu_noise_and_whiten(
+                hp_tensor, hx_tensor, F_plus, F_cross, asd_tensor, scale, 
+                config['physics']['sample_rate'], config['physics']['duration'], device
+            )
+    
+            with torch.no_grad():
+                samples = model.sample(signal_tensor, num_samples=num_samples_per_event)
+                samples = samples.squeeze(0).cpu().numpy()
+    
+            for j in range(num_params):
+                rank = np.sum(samples[:, j] <= true_params[j]) / num_samples_per_event
+                percentiles[i, j] = rank
+            
+            np.savez(checkpoint_path, percentiles=percentiles, last_event=i)
+    
+            if (i + 1) % 20 == 0 or (i + 1) == num_test_events:
+                elapsed_batch = time.time() - batch_start_time
+                elapsed_total = time.time() - global_start_time
+                events_in_batch = 20 if (i + 1) % 20 == 0 else (i + 1) % 20
+                print(f"Events [{i + 1}/{num_test_events}].  Last {events_in_batch} events: {elapsed_batch:.1f} s.  Total: {elapsed_total:.1f} s")
+                batch_start_time = time.time() 
+                
+            if time.time() - global_start_time > max_runtime:
+                print(f"\nWARNING: Time limit of {max_runtime/60:.1f} minutes reached. Exiting.")
+                sys.exit(0)
 
-        # Percentile rank for each parameter
-        for j in range(num_params):
-            rank = np.sum(samples[:, j] <= true_params[j]) / num_samples_per_event
-            percentiles[i, j] = rank
+    except KeyboardInterrupt:
+        print("\nWARNING: P-P plot evaluation interrupted. Progress saved to checkpoint.")
+        sys.exit(0)
 
-        if (i + 1) % 20 == 0 or (i + 1) == num_test_events:
-            print(f"Processed [{i + 1}/{num_test_events}] events.")
-
-    print("Generating P-P Plot...")
+    print("\nGenerating P-P plot...")
     plt.figure(figsize=(8, 8))
     
     # Theoretical cumulative values
@@ -109,14 +163,21 @@ def run_pp_analysis():
         upper = binom.ppf(1 - (1 - ci) / 2, num_test_events, theoretical_cdf) / num_test_events
         plt.fill_between(theoretical_cdf, lower, upper, color=color, alpha=alpha)
 
-    plt.plot([0, 1], [0, 1], color='black', linestyle='--', linewidth=1.5) # Diagonal line for perfect calibration
+    plt.plot([0, 1], [0, 1], color='black', linestyle='--', linewidth=1.5) # Diagonal line
 
-    # Empirical CDF for each parameter
+    # Parameter empirical CDFs
     colors = ['royalblue', 'forestgreen', 'crimson', 'darkorange', 
               'purple', 'teal', 'magenta', 'gold', 'brown', 'navy']
     for j in range(num_params):
         sorted_percentiles = np.sort(percentiles[:, j])
-        plt.plot(theoretical_cdf, sorted_percentiles, label=param_names[j], color=colors[j], linewidth=1.8)
+        
+        # Kolmogorov-Smirnov against a Uniform(0,1) distribution
+        ks_stat = ks_1samp(percentiles[:, j], uniform(0, 1).cdf)
+        p_val = ks_stat.pvalue
+        
+        label_with_pval = f"{param_names[j]} (p={p_val:.3f})"
+        
+        plt.plot(theoretical_cdf, sorted_percentiles, label=label_with_pval, color=colors[j], linewidth=1.8)
 
     plt.xlabel('p')
     plt.ylabel('CDF(p)')

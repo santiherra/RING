@@ -1,4 +1,4 @@
-# Physics engine settings
+# Physics engine
 physics:
   sample_rate: 4096
   duration: 0.0625
@@ -37,19 +37,31 @@ model:
     pool_stride: 2
     pool_padding: 0
     pool_dilation: 1
+    use_dropout: false
+    dropout_rate: 0.1
 
 # Training hyperparameters
 training:
-  epochs: 100
+  epochs: 200
   batch_size: 64
-  learning_rate: 0.0005
-  num_train_samples: 2048
-  num_val_samples: 512
+  lr_stage_1: 0.0005
+  lr_stage_2: 0.00005
+  epoch_switch: 100
+  weight_decay: 0.01
+  num_train_samples: 32768
+  num_val_samples: 8192
   save_dir: "saved_models/best_ringdown_model.pth"
+  max_runtime_minutes: 120
+
+# Offline dataset paths
+data:
+  train_file: "datasets/train_waveforms.hdf5"
+  val_file: "datasets/val_waveforms.hdf5"
+  test_file: "datasets/test_waveforms.hdf5"
 
 # Single event inference settings
 inference:
-  num_samples: 2000
+  num_samples: 20000
 
 # Pipeline diagnostics
 diagnostics:
@@ -60,3 +72,4 @@ diagnostics:
   pp_plot:
     num_test_events: 1000
     num_samples_per_event: 10000
+    max_runtime_minutes: 180

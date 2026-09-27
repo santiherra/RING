@@ -16,6 +16,9 @@ saved_models/
 *.pth
 *.pt
 
+# Data
+datasets/
+
 # Plots & Diagnostics
 diagnostics/
 

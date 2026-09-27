@@ -4,6 +4,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import corner 
+import bilby
 from pathlib import Path
 
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -13,8 +14,10 @@ if project_root not in sys.path:
 
 from models.flow import RingdownPosterior
 from data.dataset import RingdownDataset
+from physics.transforms import get_gpu_noise_and_whiten
 from utils.parser import load_config
 import argparse
+import time
 
 def run_inference():
     '''
@@ -47,6 +50,7 @@ def run_inference():
 
     # Load the trained network using the architecture settings from config
     seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
+    scale = float(config['physics']['scale'])
 
     model = RingdownPosterior(
         sequence_length=seq_len,
@@ -56,30 +60,54 @@ def run_inference():
     try:
         model.load_state_dict(torch.load(save_path, map_location=device, weights_only=True))
     except FileNotFoundError:
-        print(f"Error: '{save_path}' not found. Did train.py finish successfully?")
+        print(f"Error: '{save_path}' not found.")
         return
         
     model.eval()
 
     # Generate a single test waveform
     print("Generating a test waveform...")
-    dataset = RingdownDataset(num_samples=1)
+    t0_data = time.time()
+    dataset = RingdownDataset(num_samples=1, dataset_type='inference')
     
-    signal_tensor, true_params, snr_tensor = dataset[0]
-    signal_tensor = signal_tensor.unsqueeze(0).to(device)
-    true_snr = snr_tensor.item()
+    hp_tensor, hx_tensor, true_params = dataset[0]
+    
+    hp_tensor = hp_tensor.unsqueeze(0).to(device)
+    hx_tensor = hx_tensor.unsqueeze(0).to(device)
+    true_params = true_params.numpy()
 
-    print(f"Test waveform generated. True optimal SNR: {true_snr:.2f}")
+    det = bilby.gw.detector.get_empty_interferometer("H1")
+    F_plus = det.antenna_response(
+        config['event']['fixed_ra'], config['event']['fixed_dec'],
+        config['event']['fixed_gps'], config['event']['fixed_psi'], 'plus'
+    )
+    F_cross = det.antenna_response(
+        config['event']['fixed_ra'], config['event']['fixed_dec'],
+        config['event']['fixed_gps'], config['event']['fixed_psi'], 'cross'
+    )
+
+    freqs = np.fft.rfftfreq(seq_len, d=1.0 / config['physics']['sample_rate'])
+    psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
+    psd_arr = psd_obj.power_spectral_density_interpolated(freqs)
+    asd_tensor = torch.tensor(np.sqrt(psd_arr), dtype=torch.float32, device=device)
+
+    signal_tensor, snr = get_gpu_noise_and_whiten(
+        hp_tensor, hx_tensor, F_plus, F_cross, asd_tensor, scale, 
+        config['physics']['sample_rate'], config['physics']['duration'], device
+    )
+
+    print(f"Test waveform generated in {time.time() - t0_data:.2f} s. True optimal SNR: {snr.item():.2f}")
 
     # Generate posterior samples
     print("Running statistical inference...")
     num_samples = config.get('inference', {}).get('num_samples', 2000)
-    
+
+    t0_inf = time.time()
     with torch.no_grad():
         samples = model.sample(signal_tensor, num_samples=num_samples)
+    print(f"Generated {num_samples} posterior samples in {time.time() - t0_inf:.2f} s.")
 
     samples = samples.squeeze(0).cpu().numpy()
-    true_params = true_params.numpy()
 
     # Cartesian corner plot
     labels_cart = [r"$M_f$", r"$a_f$", 
@@ -96,7 +124,7 @@ def run_inference():
         color='royalblue',
         truth_color='red'
     )
-    fig_cart.suptitle(f"Corner plot, cartesian parameters (Injected SNR: {true_snr:.1f})", fontsize=16)
+    fig_cart.suptitle(f"Corner plot, cartesian parameters (Injected SNR: {snr.item():.1f})", fontsize=16)
     plt.show()
 
     # Polar corner plot
@@ -136,7 +164,7 @@ def run_inference():
         color='seagreen',
         truth_color='red'
     )
-    fig_polar.suptitle(f"Corner plot, polar parameters (Injected SNR: {true_snr:.1f})", fontsize=16)
+    fig_polar.suptitle(f"Corner plot, polar parameters (Injected SNR: {snr.item():.1f})", fontsize=16)
     plt.show()
 
 

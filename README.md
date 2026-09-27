@@ -48,6 +48,10 @@ All execution scripts in RING are designed to accept dynamic configuration files
 
 The configuration files are stored in the `config/` folder. The scripts default to `configs/config.yaml`. In order to produce and test different configurations, you may duplicate the file with modifications to the desired features. 
 
+* Save a dataset file:
+    ```sh
+    python data/generate_dataset.py --config configs/config.yaml
+    ```
 * Train a model:
     ```sh
     python train.py --config configs/config.yaml
@@ -76,6 +80,13 @@ The repository is modularly designed, separating the physics generation, deep le
 2. Core Directories
     * `configs/`
         * `config.yaml`: The master control file. Use this to alter training hyperparameters (learning rate, epochs, batch size), neural network depth, physics duration, and model save paths without ever touching the Python code.
+    * `data/`
+        * `generate_dataset.py`: Offline generator of HDF5 files containing the dataset of waveforms for training, validation and diagnostics using the P-P plot. Run this file by typing the following command in the terminal,
+        ```sh
+        python data/generate_dataset.py --config configs/config.yaml
+        ``` 
+        * `dataset.py`: Randomly samples remnant mass and spin, calls the physics module to generate a noisy strain, and scales the final tensor for the neural network.
+        * `dataloader.py`: Wraps the dataset into PyTorch DataLoader objects to feed data in batches to the GPU/CPU during training.
     * `evaluation/`
         * `inference.py`: The primary executable for evaluating the model. It loads a pre-trained model, generates a blind test waveform, runs statistical inference, and outputs a plot comparing the network's predicted posterior distributions against the true hidden parameters. Run this by typing the following command in the terminal,
         ```sh
@@ -91,9 +102,6 @@ The repository is modularly designed, separating the physics generation, deep le
         * `waveform.py`: Generates the pure, mathematical ringdown waveforms using quasinormal modes (QNM).
         * `detector.py`: Projects the pure waveform onto the Advanced LIGO (H1) detector antenna pattern based on sky location and GPS time.
         * `noise.py`: Generates colored Gaussian noise using the aLIGO Power Spectral Density (PSD).
-    * `data/`
-        * `dataset.py`: The PyTorch Dataset factory. It randomly samples remnant mass and spin, calls the physics module to generate a noisy strain, and scales the final tensor for the neural network.
-        * `dataloader.py`: Wraps the dataset into PyTorch DataLoader objects to feed data in batches to the GPU/CPU during training.
     * `models/`
         * `embedding.py`: Contains a 1D Convolutional Neural Network (CNN). It acts as a feature extractor, compressing the 256 time-steps of the waveform into a dense vector of 64 summary features.
         * `flow.py`: The brain of the network. It utilizes nflows to build a Normalizing Flow that learns the complex posterior probability distribution of the parameters conditioned on the CNN's summary features.

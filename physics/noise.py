@@ -78,13 +78,13 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 4))
     
     # Raw signal and physical ringdown waveform
-    plt.plot(t, raw_signal, color='lightgray', label='Raw Signal + Noise', zorder=0)
-    plt.plot(t, h_observed, color='orange', label='Raw Ringdown', zorder=5)
+    plt.plot(t, raw_signal * 1e21, color='lightgray', label='Raw + Noise', zorder=0)
+    plt.plot(t, h_observed * 1e21, color='orange', label='Raw', zorder=5)
     
-    plt.title('Physical LIGO Data (Strain ~ 1e-21)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('Strain')
-    plt.legend(loc="upper right")
-    plt.grid(True)
+    #plt.title('Physical LIGO Data (Strain ~ 1e-21})')
+    plt.xlabel(r't (s)', fontsize=16)
+    plt.ylabel(r'$10^{21} h$', fontsize=16)
+    plt.legend(loc="upper right", fontsize=16)
+    plt.tick_params(axis='both', which='major', labelsize=14)
     plt.show()
     

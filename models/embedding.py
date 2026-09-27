@@ -6,7 +6,7 @@ import torch.nn as nn
 class WaveformEmbedding(nn.Module):
     def __init__(self, sequence_length, embedding_config, output_dim=64):
         '''
-        Initializes a 1D Convolutional Neural Network that compresses a time-domain ringdown
+        Initialises a 1D Convolutional Neural Network that compresses a time-domain ringdown
         into a dense vector of summary features.
         
         Parameters:
@@ -42,14 +42,18 @@ class WaveformEmbedding(nn.Module):
         self.pp = embedding_config['pool_padding']
         self.pd = embedding_config['pool_dilation']
 
-        # Algebraic Consistency Checker
+        # Regularisation params
+        self.use_dropout = embedding_config.get('use_dropout', False)
+        self.dropout_rate = embedding_config.get('dropout_rate', 0.0)
+
+        # Architectural consistency checker
         final_seq_length = self._check_algebra(sequence_length)
         flattened_size = final_seq_length * self.channels[-1]
 
         layers = []
         current_in_channels = self.in_channels
         
-        # Build as many sequences as the user defined in the config.yaml list
+        # Build as many sequences as defined in config.yaml
         for out_channels in self.channels:
             layers.append(nn.Conv1d(
                 in_channels=current_in_channels, 
@@ -70,7 +74,7 @@ class WaveformEmbedding(nn.Module):
         
         layers.append(nn.Flatten())
         
-        # Group the dynamically generated sequence into a single executable block
+        # Group sequence into single executable block
         self.cnn_blocks = nn.Sequential(*layers)
         self.linear = nn.Linear(flattened_size, output_dim)
 
@@ -86,12 +90,12 @@ class WaveformEmbedding(nn.Module):
         '''
 
         for i, _ in enumerate(self.channels):
-            # Exact PyTorch Conv1d formula
+            # Conv1d array length
             length = math.floor((length + 2 * self.p - self.d * (self.k - 1) - 1) / self.s + 1)
             if length <= 0:
                 raise ValueError(f"\n[ALGEBRA ERROR] Conv1d Layer {i+1} reduced length to {length}.")
             
-            # Exact PyTorch MaxPool1d formula
+            # MaxPool1d array length
             length = math.floor((length + 2 * self.pp - self.pd * (self.pk - 1) - 1) / self.ps + 1)
             if length <= 0:
                 raise ValueError(f"\n[ALGEBRA ERROR] MaxPool1d Layer {i+1} reduced length to {length}.")
@@ -103,16 +107,12 @@ class WaveformEmbedding(nn.Module):
         Passes the waveform tensor through the network layers 
         
         Parameters:
-        - x: Input tensor of shape [Batch, in_channels, ]
+        - x: Input tensor of shape [Batch, in_channels, sequence_length]
         
         Returns:
         - features: Output tensor of shape [Batch, output_dim]
         """
-
-        # Pass the input through the convolutional layers with ReLU activations and max pooling
         x = self.cnn_blocks(x)
-
-        # Pass the output through the linear layer to get the final summary features
         features = self.linear(x)
         
         return features
@@ -128,5 +128,5 @@ if __name__ == "__main__":
     dummy_batch = torch.randn(32, 1, test_length)
     embedder = WaveformEmbedding(sequence_length=test_length, embedding_config=test_config, output_dim=64)
     print(f"Output shape: {embedder(dummy_batch).shape}")
-    print("Exact PyTorch CNN algebra is mathematically consistent!")
+    print("Architectural CNN algebra mathematically consistent.")
     
