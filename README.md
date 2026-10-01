@@ -48,7 +48,7 @@ All execution scripts in RING are designed to accept dynamic configuration files
 
 The configuration files are stored in the `config/` folder. The scripts default to `configs/config.yaml`. In order to produce and test different configurations, you may duplicate the file with modifications to the desired features. 
 
-* Save a dataset file:
+* Save the dataset files:
     ```sh
     python data/generate_dataset.py --config configs/config.yaml
     ```
@@ -79,7 +79,7 @@ The repository is modularly designed, separating the physics generation, deep le
 
 2. Core Directories
     * `configs/`
-        * `config.yaml`: The master control file. Use this to alter training hyperparameters (learning rate, epochs, batch size), neural network depth, physics duration, and model save paths without ever touching the Python code.
+        * `config.yaml`: The master control file. Use this to alter training hyperparameters (learning rate, epochs, batch size), neural network depth, physics duration, and model save paths.
     * `data/`
         * `generate_dataset.py`: Offline generator of HDF5 files containing the dataset of waveforms for training, validation and diagnostics using the P-P plot. Run this file by typing the following command in the terminal,
         ```sh
@@ -87,28 +87,31 @@ The repository is modularly designed, separating the physics generation, deep le
         ``` 
         * `dataset.py`: Randomly samples remnant mass and spin, calls the physics module to generate a noisy strain, and scales the final tensor for the neural network.
         * `dataloader.py`: Wraps the dataset into PyTorch DataLoader objects to feed data in batches to the GPU/CPU during training.
+    * `datasets/``
+    This folder is generated automatically after running `generate_dataset.py`. It stores three separate sets with raw waveforms generated in the source frame given a specified configuration, for each training, validation and diagnostics. 
     * `evaluation/`
-        * `inference.py`: The primary executable for evaluating the model. It loads a pre-trained model, generates a blind test waveform, runs statistical inference, and outputs a plot comparing the network's predicted posterior distributions against the true hidden parameters. Run this by typing the following command in the terminal,
+        * `inference.py`: The main executable for the model. It loads a pre-trained model, generates a blind test waveform, runs statistical inference, and outputs a plot comparing the network's predicted posterior distributions against the true hidden parameters. Run this by typing the following command in the terminal,
         ```sh
         python evaluation/inference.py --config configs/config.yaml
         ```
-        * `pp_plot.py`: Generates test waveforms to rigorously evaluate the statistical calibration of the network's uncertainties through Percentile-Percentile (P-P) plotting. Run this by typing the following command in the terminal,
+        * `pp_plot.py`: Generates test waveforms to evaluate the statistical calibration of the network's uncertainties through Percentile-Percentile (P-P) plotting and a Kolmogorov-Smirnov test. Run this by typing the following command in the terminal,
         ```sh
         python evaluation/pp_plot.py --config configs/config.yaml
         ```
     * `diagnostics/`
-    Auto-generated folder where the pipeline saves visual and data benchmarking tools, including Negative Log-Likelihood (NLL) learning curves, optimal matched filter SNR distributions and P-P plots, whenever each of these options are set to `true` in the configuration file.
+    This folder is generated automatically during training or test, saving visual and data benchmarking tools, including the data and plots for Negative Log-Likelihood (NLL) learning curves and optimal Signal-to-Noise (SNR) distributions as well as P-P plots whenever each of these options are set to `true` in the configuration file. Checkpoint files for the P-P plot generation are also stored in this folder.
     * `physics/`
         * `waveform.py`: Generates the pure, mathematical ringdown waveforms using quasinormal modes (QNM).
-        * `detector.py`: Projects the pure waveform onto the Advanced LIGO (H1) detector antenna pattern based on sky location and GPS time.
+        * `detector.py`: Projects the pure waveform onto the detector antenna pattern based on sky location and GPS time.
         * `noise.py`: Generates colored Gaussian noise using the aLIGO Power Spectral Density (PSD).
+        * `transforms.py`: Pipeline file. Applies antenna patterns and whitenned random Gaussian noise to the raw waveforms in source frame from the dataset on real time, during each stage of the training and diagnostics processes. It performs fast conversions from time domain to frequency domain (and viceversa) taking advantage of the GPU.
     * `models/`
         * `embedding.py`: Contains a 1D Convolutional Neural Network (CNN). It acts as a feature extractor, compressing the 256 time-steps of the waveform into a dense vector of 64 summary features.
         * `flow.py`: The brain of the network. It utilizes nflows to build a Normalizing Flow that learns the complex posterior probability distribution of the parameters conditioned on the CNN's summary features.
     * `utils/`
         * `parser.py`: A utility script that safely loads and parses config.yaml using dynamic pathing, ensuring the configuration can be read regardless of where the terminal is executed.
     * `saved_models/`
-    This folder is automatically generated during training. It serves as the storage location for your saved .pth model weights.
+    This folder is automatically generated during training. It serves as the storage location for the saved .pth model weights, including the checkpoint state for prompt termination of the run or multistage training.
 
 ## References & Dependencies
 
