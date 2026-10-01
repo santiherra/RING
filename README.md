@@ -44,9 +44,7 @@ To run RING, you will need to clone the repository and it is convenient to set u
 
 ## Usage & Dynamic Configurations
 
-All execution scripts in RING are designed to accept dynamic configuration files via the `--config` flag. This allows you to run multiple experiments (e.g., changing SNR ranges, epochs, or neural network depths) without overwriting your master settings. 
-
-The configuration files are stored in the `config/` folder. The scripts default to `configs/config.yaml`. In order to produce and test different configurations, you may duplicate the file with modifications to the desired features. 
+All execution scripts in RING are designed to accept dynamic configuration files via the `--config` flag. This allows the user to run multiple experiments (e.g., changing SNR ranges, epochs, or neural network depths) without overwriting the master settings. The configuration files are stored in the `config/` folder. The scripts default to `configs/config.yaml`. In order to produce and test different configurations, you may duplicate the file with modifications to the desired features. 
 
 * Save the dataset files:
     ```sh
@@ -106,22 +104,22 @@ The repository is modularly designed, separating the physics generation, deep le
         * `noise.py`: Generates colored Gaussian noise using the aLIGO Power Spectral Density (PSD).
         * `transforms.py`: Pipeline file. Applies antenna patterns and whitenned random Gaussian noise to the raw waveforms in source frame from the dataset on real time, during each stage of the training and diagnostics processes. It performs fast conversions from time domain to frequency domain (and viceversa) taking advantage of the GPU.
     * `models/`
-        * `embedding.py`: Contains a 1D Convolutional Neural Network (CNN). It acts as a feature extractor, compressing the 256 time-steps of the waveform into a dense vector of 64 summary features.
+        * `embedding.py`: Contains a 1D Convolutional Neural Network (CNN). It acts as a feature extractor, compressing the time steps of the waveform into a dense vector of summary features.
         * `flow.py`: The brain of the network. It utilizes nflows to build a Normalizing Flow that learns the complex posterior probability distribution of the parameters conditioned on the CNN's summary features.
     * `utils/`
-        * `parser.py`: A utility script that safely loads and parses config.yaml using dynamic pathing, ensuring the configuration can be read regardless of where the terminal is executed.
+        * `parser.py`: A utility script that safely loads and parses config.yaml using dynamic path connections, ensuring the configuration can be read regardless from the execution of any file.
     * `saved_models/`
     This folder is automatically generated during training. It serves as the storage location for the saved .pth model weights, including the checkpoint state for prompt termination of the run or multistage training.
 
 ## References & Dependencies
 
-This project relies on several open-source libraries. For further reading on the underlying mechanics, refer to their official documentation:
+This project relies on several open-source libraries. For further reading:
 * [Pytorch](https://pytorch.org): The core software used for building the CNN and handling tensor operations.
-* [bilby](https://pypi.org/project/bilby/): Used for accessing the advanced LIGO Power Spectral Density (PSD) and generating realistic detector noise.
+* [bilby](https://pypi.org/project/bilby/): Used for accessing the detectors Power Spectral Density (PSD) and generating realistic detector noise.
 * [nflows](https://github.com/bayesiains/nflows): normalizing flows in PyTorch.
-* [qnm](https://qnm.readthedocs.io/en/latest/README.html#): package for computing the complex frequencies andamplitude parameters for the QNM of a remnant black hole, as well as their decomposition in spheroidal harmonics.
+* [qnm](https://qnm.readthedocs.io/en/latest/README.html#): package for computing the complex frequencies and amplitude parameters for the QNM of a remnant black hole.
 * [NumPy](https://numpy.org/doc/2.1/index.html), [SciPy](https://scipy.org/es/) & [Matplotlib](https://matplotlib.org): Standard libraries for mathematical operations and results visualization.
-* [corner](https://corner.readthedocs.io/en/latest/): Used to visualize multi-dimensional parameter distributions usingdense scatterplot matrices and contour intervals.
+* [corner](https://corner.readthedocs.io/en/latest/): Used to visualize multi-dimensional parameter distributions using dense scatterplot matrices and contour intervals.
 
 ### References
 * > Gregory Ashton et al., _BILBY: A user-friendly Bayesian inference library for gravitational-wave astronomy_, The Astrophysical Journal Supplement Series (2019) 241, 27. [[arXiv]](https://arxiv.org/abs/1811.02042)
