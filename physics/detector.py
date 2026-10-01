@@ -1,68 +1,57 @@
 import numpy as np
 import bilby
 
-# Hanford detector object
-H1 = bilby.gw.detector.get_empty_interferometer("H1")
+def get_detector_responses(detector_names, ra, dec, psi, gps_time, sample_rate, duration):
+    '''
+    Computes antenna patterns, geometric time delays, and ASD arrays for a list of detectors.
 
-# Uncomment the line below to add the Livingston detector.
-# L1 = bilby.gw.detector.get_empty_interferometer("L1")
-
-def project_to_detector(hp, hx, ra, dec, psi, gps_time, detector="H1"):
-    """
-    Calculates the exact antenna patterns F_+ and F_x, and projects 
-    the radiation-frame ringdown polarizations into the observer frame.
-    
     Parameters:
-    - hp, hx: Time-series arrays (1D Numpy arrays from waveform.py)
-    - ra, dec, psi: Right ascension, declination, and polarization angles (radians)
-    - gps_time: The GPS time of the event (t_0)
-    - detector: String ('H1' or 'L1')
-    
+    - detector_names: List of detector identifiers
+    - ra, dec, psi: Extrinsic angular parameters, right ascension, declination and polarisation angle (radians)
+    - gps_time: Geocenter GPS time (seconds)
+    - sample_rate: Sampling frequency (Hz)
+    - duration: Signal duration (seconds)
+
     Returns:
-    - h_det: The 1D observed strain array scaled for the chosen detector
-    """
-    
-    # Detector geometry
-    if detector == "H1":
-        det = H1
-    # Uncomment the lines below to add the Livingston detector.
-    # elif detector == "L1": 
-    #     det = L1
-    else:
-        raise ValueError(f"Detector {detector} not yet implemented.")
+    - responses: Dict containing F_plus, F_cross, time_delay, and asd per detector.
+    '''
+    seq_len = int(duration * sample_rate)
+    freqs = np.fft.rfftfreq(seq_len, d=1.0 / sample_rate)
+
+    responses = {
+        'names': detector_names,
+        'F_plus': [],
+        'F_cross': [],
+        'time_delay': [],
+        'asd': []
+    }
+
+    for name in detector_names:
+        det = bilby.gw.detector.get_empty_interferometer(name)
         
-    # Antenna Patterns
-    F_plus = det.antenna_response(ra, dec, gps_time, psi, 'plus')
-    F_cross = det.antenna_response(ra, dec, gps_time, psi, 'cross')
-    
-    # Projection of the waveform components into the detector arm
-    h_det = (F_plus * hp) + (F_cross * hx)
-    
-    return h_det
+        f_p = det.antenna_response(ra, dec, gps_time, psi, 'plus')
+        f_c = det.antenna_response(ra, dec, gps_time, psi, 'cross')
+        delay = det.time_delay_from_geocenter(ra, dec, gps_time)
+        
+        if name in ['H1', 'L1']:
+            psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
+        elif name == 'V1':
+            psd_obj = bilby.gw.detector.PowerSpectralDensity.from_advanced_virgo()
+        else:
+            psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
 
+        psd_arr = psd_obj.power_spectral_density_interpolated(freqs)
+        psd_arr[np.isinf(psd_arr)] = 1e-46
+        asd_arr = np.sqrt(psd_arr)
 
-''' QUICK TEST '''
+        responses['F_plus'].append(f_p)
+        responses['F_cross'].append(f_c)
+        responses['time_delay'].append(delay)
+        responses['asd'].append(asd_arr)
 
-if __name__ == "__main__":
-    # Test waveform 
-    dummy_t = np.linspace(0, 0.05, 2048)
-    dummy_hp = np.cos(2 * np.pi * 250 * dummy_t) * np.exp(-dummy_t / 0.01)
-    dummy_hx = np.sin(2 * np.pi * 250 * dummy_t) * np.exp(-dummy_t / 0.01)
-    
-    # Example values
-    test_gps_time = 1420950000.0  
-    test_ra = 1.5
-    test_dec = -0.5
-    test_psi = 0.8
-    
-    # Projection
-    h_observed = project_to_detector(
-        dummy_hp, dummy_hx, 
-        ra=test_ra, dec=test_dec, psi=test_psi, gps_time=test_gps_time, 
-        detector="H1"
-    )
-    
-    print(f"Raw H_plus max amplitude:  {np.max(abs(dummy_hp)):.4f}")
-    print(f"Observed H1 max amplitude: {np.max(abs(h_observed)):.4f}")
-    print("Notice how the detector's geometry scales down the raw signal amplitude!")
-    
+    responses['F_plus'] = np.array(responses['F_plus'], dtype=np.float32)
+    responses['F_cross'] = np.array(responses['F_cross'], dtype=np.float32)
+    responses['time_delay'] = np.array(responses['time_delay'], dtype=np.float32)
+    responses['asd'] = np.array(responses['asd'], dtype=np.float32)
+
+    return responses

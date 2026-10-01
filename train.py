@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from data.dataloader import get_dataloaders
 from models.flow import RingdownPosterior
+from physics.detector import get_detector_responses
 from utils.parser import load_config
 from physics.transforms import get_gpu_noise_and_whiten
 import argparse
@@ -57,22 +58,24 @@ def train():
     scale = float(config['physics']['scale'])
     seq_len = int(duration * sample_rate)
 
-    # Antenna pattern (H1)
-    det = bilby.gw.detector.get_empty_interferometer("H1")
-    F_plus = det.antenna_response(
-        config['event']['fixed_ra'], config['event']['fixed_dec'],
-        config['event']['fixed_gps'], config['event']['fixed_psi'], 'plus'
-    )
-    F_cross = det.antenna_response(
-        config['event']['fixed_ra'], config['event']['fixed_dec'],
-        config['event']['fixed_gps'], config['event']['fixed_psi'], 'cross'
+    detector_names = config['event'].get('detectors', ['H1', 'L1'])
+    config['model']['embedding_net']['in_channels'] = len(detector_names)
+    print(f"Detectors in network: {detector_names} \n")
+
+    responses = get_detector_responses(
+        detector_names=detector_names,
+        ra=config['event']['fixed_ra'],
+        dec=config['event']['fixed_dec'],
+        psi=config['event']['fixed_psi'],
+        gps_time=config['event']['fixed_gps'],
+        sample_rate=sample_rate,
+        duration=duration
     )
 
-    # Amplitude Spectral Density (ASD)
-    freqs = np.fft.rfftfreq(seq_len, d=1.0 / sample_rate)
-    psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
-    psd_arr = psd_obj.power_spectral_density_interpolated(freqs)
-    asd_tensor = torch.tensor(np.sqrt(psd_arr), dtype=torch.float32, device=device)
+    F_plus = torch.tensor(responses['F_plus'], dtype=torch.float32, device=device)
+    F_cross = torch.tensor(responses['F_cross'], dtype=torch.float32, device=device)
+    time_delays = torch.tensor(responses['time_delay'], dtype=torch.float32, device=device)
+    asd_tensors = torch.tensor(responses['asd'], dtype=torch.float32, device=device)
     
     # Initialize data loaders 
     print("Loading signal datasets...")
@@ -94,7 +97,6 @@ def train():
     print("Starting training process...\n")
 
     # Save the model
-    project_root = os.path.dirname(os.path.abspath(__file__))
     save_path = os.path.join(project_root, config['training']['save_dir'])
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -145,7 +147,7 @@ def train():
                 targets = targets.float().to(device)
                 
                 signals, snr = get_gpu_noise_and_whiten(
-                    hp_b, hx_b, F_plus, F_cross, asd_tensor, scale, sample_rate, duration, device
+                    hp_b, hx_b, F_plus, F_cross, time_delays, asd_tensors, scale, sample_rate, duration, device
                 )
 
                 if epoch == 0 and config.get('diagnostics', {}).get('compute_snr', True):
@@ -175,7 +177,7 @@ def train():
                     targets = targets.float().to(device)
                     
                     signals, _ = get_gpu_noise_and_whiten(
-                        hp_b, hx_b, F_plus, F_cross, asd_tensor, scale, sample_rate, duration, device
+                        hp_b, hx_b, F_plus, F_cross, time_delays, asd_tensors, scale, sample_rate, duration, device
                     )
                     
                     loss = model(signals, targets)

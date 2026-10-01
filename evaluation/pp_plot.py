@@ -15,6 +15,7 @@ if project_root not in sys.path:
 from models.flow import RingdownPosterior
 from data.dataset import RingdownDataset
 from physics.transforms import get_gpu_noise_and_whiten
+from physics.detector import get_detector_responses
 from utils.parser import load_config
 import argparse
 import time
@@ -55,6 +56,9 @@ def run_pp_analysis():
     seq_len = int(config['physics']['duration'] * config['physics']['sample_rate'])
     scale = float(config['physics']['scale'])
 
+    detector_names = config['event'].get('detectors', ['H1', 'L1'])
+    config['model']['embedding_net']['in_channels'] = len(detector_names)
+
     model = RingdownPosterior(
         sequence_length=seq_len,
         model_config=config['model']
@@ -74,20 +78,20 @@ def run_pp_analysis():
     test_dataset = RingdownDataset(num_samples=num_test_events, dataset_type='test')
     print(f"Test waveforms loaded in {time.time() - t0_data:.2f} s.")
 
-    det = bilby.gw.detector.get_empty_interferometer("H1")
-    F_plus = det.antenna_response(
-        config['event']['fixed_ra'], config['event']['fixed_dec'],
-        config['event']['fixed_gps'], config['event']['fixed_psi'], 'plus'
-    )
-    F_cross = det.antenna_response(
-        config['event']['fixed_ra'], config['event']['fixed_dec'],
-        config['event']['fixed_gps'], config['event']['fixed_psi'], 'cross'
+    responses = get_detector_responses(
+        detector_names=detector_names,
+        ra=config['event']['fixed_ra'],
+        dec=config['event']['fixed_dec'],
+        psi=config['event']['fixed_psi'],
+        gps_time=config['event']['fixed_gps'],
+        sample_rate=config['physics']['sample_rate'],
+        duration=config['physics']['duration']
     )
 
-    freqs = np.fft.rfftfreq(seq_len, d=1.0 / config['physics']['sample_rate'])
-    psd_obj = bilby.gw.detector.PowerSpectralDensity.from_aligo()
-    psd_arr = psd_obj.power_spectral_density_interpolated(freqs)
-    asd_tensor = torch.tensor(np.sqrt(psd_arr), dtype=torch.float32, device=device)
+    F_plus = torch.tensor(responses['F_plus'], dtype=torch.float32, device=device)
+    F_cross = torch.tensor(responses['F_cross'], dtype=torch.float32, device=device)
+    time_delays = torch.tensor(responses['time_delay'], dtype=torch.float32, device=device)
+    asd_tensors = torch.tensor(responses['asd'], dtype=torch.float32, device=device)
     
     # Target parameter names
     param_names = [r"$M_f$", r"$a_f$", 
@@ -122,7 +126,7 @@ def run_pp_analysis():
             true_params = true_params.numpy()
 
             signal_tensor, _ = get_gpu_noise_and_whiten(
-                hp_tensor, hx_tensor, F_plus, F_cross, asd_tensor, scale, 
+                hp_tensor, hx_tensor, F_plus, F_cross, time_delays, asd_tensors, scale, 
                 config['physics']['sample_rate'], config['physics']['duration'], device
             )
     
