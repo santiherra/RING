@@ -1,20 +1,23 @@
-# PyTorch (Core Deep Learning Framework)
+# PyTorch
 torch
 torchvision
 
-# Math and Plotting
+# Math and plots
 numpy
 matplotlib
 scipy
 emcee
 corner
 
-# Physics and Gravitational Waves
+# Gravitational wave noise and Quasi-Normal Modes
 bilby
 qnm
 
-# Normalizing Flows (Statistical Inference)
+# Normalizing Flows
 nflows
+
+# Data format
+h5py
 
 # Utility
 PyYAML
