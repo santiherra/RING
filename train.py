@@ -230,9 +230,10 @@ def train():
 
     if config.get('diagnostics', {}).get('plot_loss_curve', False):
         print("Generating loss curve plot...")
+        actual_epochs = len(history_train_loss)
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1, epochs + 1), history_train_loss, label='Training Loss', color='royalblue', linewidth=2)
-        plt.plot(range(1, epochs + 1), history_val_loss, label='Validation Loss', color='darkorange', linewidth=2)
+        plt.plot(range(1, actual_epochs + 1), history_train_loss, label='Training Loss', color='royalblue', linewidth=2)
+        plt.plot(range(1, actual_epochs + 1), history_val_loss, label='Validation Loss', color='darkorange', linewidth=2)
         plt.xlabel('Epoch')
         plt.ylim(0, 20)
         plt.title('Dataset Learning Curves')
