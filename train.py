@@ -217,7 +217,7 @@ def train():
             # Time limit check
             if time.time() - global_start_time > max_runtime:
                 print(f"\nWARNING: Time limit of {max_runtime/60:.1f} minutes reached. Saving and exiting.")
-                break
+                sys.exit(99)
 
     except KeyboardInterrupt:
         print("\nWARNING: Training interrupted. Checkpoint and data saved safely.")
