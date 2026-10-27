@@ -33,7 +33,7 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
     if batch_size is None:
         batch_size = config['training']['batch_size']
     
-    # Initialize dataset with config
+    # Initialise dataset with config
     train_dataset = RingdownDataset(num_samples=num_train, config=config, dataset_type='train')
     val_dataset = RingdownDataset(num_samples=num_val, config=config, dataset_type='val')
     

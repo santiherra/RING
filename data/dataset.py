@@ -24,7 +24,7 @@ class RingdownDataset(Dataset):
         or generates a single injection for inference of an event.
 
         Parameters:
-        - num_samples: Number of samples to generate in the dataset
+        - num_samples: Number of samples to generate in the dataset.
         - file_path: Optional path to save the dataset HDF5 file. If None, will use default paths based on dataset_type.
         - config: Optional configuration dictionary. If None, will load from config_path.
         - config_path: Path to the YAML configuration file (default: "configs/config.yaml")
@@ -96,8 +96,8 @@ class RingdownDataset(Dataset):
     def __len__(self):
         '''
         Returns:
-        - Training/validation/testing: number of samples in the dataset
-        - Inference: number of samples to generate
+        - Training/validation/testing: number of samples in the dataset.
+        - Inference: number of samples to generate.
         '''
         if self.dataset_type == "inference":
             return self.num_samples
@@ -109,7 +109,7 @@ class RingdownDataset(Dataset):
         and its corresponding intrinsic parameters.
 
         Parameters:
-        - idx: Index of the sample to generate
+        - idx: Index of the sample to generate.
 
         Returns:
         - Training/validation/testing:
@@ -117,8 +117,8 @@ class RingdownDataset(Dataset):
           - params_tensor: PyTorch tensor of the intrinsic parameters
                            (shape: [10], containing [Mf, af, C_re_0, C_im_0, C_re_1, C_im_1])
         - Inference:
-            - inf_hp: plus polarization waveform tensor (shape: [num_samples])
-            - inf_hx: cross polarization waveform tensor (shape: [num_samples])
+            - inf_hp: plus polarisation waveform tensor (shape: [num_samples])
+            - inf_hx: cross polarisation waveform tensor (shape: [num_samples])
             - inf_params: intrinsic parameters tensor (shape: [10] by default)
         '''
         if self.dataset_type == "inference":

@@ -44,7 +44,7 @@ if __name__ == "__main__":
     test_duration = 0.0625
     test_sample_rate = 4096
     
-    # Initialize PSD once to prevent terminal spam during tests
+    # Initialise PSD once to prevent terminal spam during tests
     import logging
     logging.getLogger('bilby').setLevel(logging.WARNING)
     test_psd = bilby.gw.detector.PowerSpectralDensity.from_aligo()
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     plt.plot(t, raw_signal * 1e21, color='lightgray', label='Raw + Noise', zorder=0)
     plt.plot(t, h_observed * 1e21, color='orange', label='Raw', zorder=5)
     
-    #plt.title('Physical LIGO Data (Strain ~ 1e-21})')
+    plt.title('Physical data')
     plt.xlabel(r't (s)', fontsize=16)
     plt.ylabel(r'$10^{21} h$', fontsize=16)
     plt.legend(loc="upper right", fontsize=16)

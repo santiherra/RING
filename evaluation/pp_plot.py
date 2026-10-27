@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import binom, ks_1samp, uniform
-import bilby
 from pathlib import Path
 
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -15,7 +14,7 @@ if project_root not in sys.path:
 from models.flow import RingdownPosterior
 from data.dataset import RingdownDataset
 from physics.transforms import get_gpu_noise_and_whiten
-from physics.detector import get_detector_responses
+from physics.detector import VectorisedDetectorProjector
 from utils.parser import load_config
 import argparse
 import time
@@ -37,12 +36,13 @@ def run_pp_analysis():
     pp_config = config.get('diagnostics', {}).get('pp_plot', {})
     num_test_events = pp_config.get('num_test_events', 1000)
     num_samples_per_event = pp_config.get('num_samples_per_event', 10000)
+    ext_priors = config['extrinsic_priors']
     
     save_path = os.path.join(project_root, config['training']['save_dir'])
     diagnostics_dir = os.path.join(project_root, "diagnostics")
     os.makedirs(diagnostics_dir, exist_ok=True)
 
-    # Device configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for CUDA, then MPS, else CPU.
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -78,20 +78,11 @@ def run_pp_analysis():
     test_dataset = RingdownDataset(num_samples=num_test_events, dataset_type='test')
     print(f"Test waveforms loaded in {time.time() - t0_data:.2f} s.")
 
-    responses = get_detector_responses(
+    projector = VectorisedDetectorProjector(
         detector_names=detector_names,
-        ra=config['event']['fixed_ra'],
-        dec=config['event']['fixed_dec'],
-        psi=config['event']['fixed_psi'],
-        gps_time=config['event']['fixed_gps'],
         sample_rate=config['physics']['sample_rate'],
         duration=config['physics']['duration']
     )
-
-    F_plus = torch.tensor(responses['F_plus'], dtype=torch.float32, device=device)
-    F_cross = torch.tensor(responses['F_cross'], dtype=torch.float32, device=device)
-    time_delays = torch.tensor(responses['time_delay'], dtype=torch.float32, device=device)
-    asd_tensors = torch.tensor(responses['asd'], dtype=torch.float32, device=device)
     
     # Target parameter names
     param_names = [r"$M_f$", r"$a_f$", 
@@ -125,13 +116,36 @@ def run_pp_analysis():
             hx_tensor = hx_tensor.unsqueeze(0).to(device)
             true_params = true_params.numpy()
 
+            # Randomise sky location and distance
+            ra = np.random.uniform(ext_priors['ra_min'], ext_priors['ra_max'], 1)
+            dec = np.random.uniform(ext_priors['dec_min'], ext_priors['dec_max'], 1)
+            psi = np.random.uniform(ext_priors['psi_min'], ext_priors['psi_max'], 1)
+            gps = np.random.uniform(ext_priors['gps_min'], ext_priors['gps_max'], 1)
+            dist = np.random.uniform(ext_priors['distance_min'], ext_priors['distance_max'], 1)
+
+            F_p, F_c, t_delays, asd_t = projector.project_batch(ra, dec, psi, gps)
+            
+            F_plus = torch.tensor(F_p, dtype=torch.float32, device=device).unsqueeze(-1)
+            F_cross = torch.tensor(F_c, dtype=torch.float32, device=device).unsqueeze(-1)
+            time_delays = torch.tensor(t_delays, dtype=torch.float32, device=device).unsqueeze(-1)
+            asd_tensors = torch.tensor(asd_t, dtype=torch.float32, device=device)
+            
+            # Normalise extrinsic parameters to [0, 1] to prevent gradient explosion
+            ra_norm = (ra - ext_priors['ra_min']) / (ext_priors['ra_max'] - ext_priors['ra_min'] + 1e-8)
+            dec_norm = (dec - ext_priors['dec_min']) / (ext_priors['dec_max'] - ext_priors['dec_min'] + 1e-8)
+            psi_norm = (psi - ext_priors['psi_min']) / (ext_priors['psi_max'] - ext_priors['psi_min'] + 1e-8)
+            gps_norm = (gps - ext_priors['gps_min']) / (ext_priors['gps_max'] - ext_priors['gps_min'] + 1e-8)
+            dist_norm = (dist - ext_priors['distance_min']) / (ext_priors['distance_max'] - ext_priors['distance_min'] + 1e-8)
+            
+            extrinsic_params = torch.tensor(np.column_stack((ra_norm, dec_norm, psi_norm, gps_norm, dist_norm)), dtype=torch.float32, device=device)
+
             signal_tensor, _ = get_gpu_noise_and_whiten(
                 hp_tensor, hx_tensor, F_plus, F_cross, time_delays, asd_tensors, scale, 
                 config['physics']['sample_rate'], config['physics']['duration'], device
             )
     
             with torch.no_grad():
-                samples = model.sample(signal_tensor, num_samples=num_samples_per_event)
+                samples = model.sample(signal_tensor, extrinsic_params, num_samples=num_samples_per_event)
                 samples = samples.squeeze(0).cpu().numpy()
     
             for j in range(num_params):

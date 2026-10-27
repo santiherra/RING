@@ -5,13 +5,12 @@ import numpy as np
 import torch
 from torch.optim import AdamW
 import matplotlib.pyplot as plt
-import bilby
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from data.dataloader import get_dataloaders
 from models.flow import RingdownPosterior
-from physics.detector import get_detector_responses
+from physics.detector import VectorisedDetectorProjector
 from utils.parser import load_config
 from physics.transforms import get_gpu_noise_and_whiten
 import argparse
@@ -33,7 +32,7 @@ def train():
     print(f"Loading configuration from: {config_path}")
     config = load_config(config_path)
     
-    # Device configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for CUDA, MPS, else CPU.
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -47,6 +46,7 @@ def train():
     batch_size = config['training']['batch_size']
     num_train = config['training']['num_train_samples']
     num_val = config['training']['num_val_samples']
+    ext_priors = config['extrinsic_priors']
 
     lr_stage_1 = config['training'].get('lr_stage_1', 0.0005)
     lr_stage_2 = config['training'].get('lr_stage_2', 0.00005)
@@ -62,22 +62,14 @@ def train():
     config['model']['embedding_net']['in_channels'] = len(detector_names)
     print(f"Detectors in network: {detector_names} \n")
 
-    responses = get_detector_responses(
+    # Initialise the detector projector
+    projector = VectorisedDetectorProjector(
         detector_names=detector_names,
-        ra=config['event']['fixed_ra'],
-        dec=config['event']['fixed_dec'],
-        psi=config['event']['fixed_psi'],
-        gps_time=config['event']['fixed_gps'],
         sample_rate=sample_rate,
         duration=duration
     )
-
-    F_plus = torch.tensor(responses['F_plus'], dtype=torch.float32, device=device)
-    F_cross = torch.tensor(responses['F_cross'], dtype=torch.float32, device=device)
-    time_delays = torch.tensor(responses['time_delay'], dtype=torch.float32, device=device)
-    asd_tensors = torch.tensor(responses['asd'], dtype=torch.float32, device=device)
     
-    # Initialize data loaders 
+    # Initialise data loaders 
     print("Loading signal datasets...")
     train_loader, val_loader = get_dataloaders(
         num_train=num_train, 
@@ -86,13 +78,13 @@ def train():
         config_path=config_path
     )
     
-    # Initialize model
+    # Initialise model
     model = RingdownPosterior(
         sequence_length=seq_len,
         model_config=config['model']
     ).float().to(device)
     
-    optimizer = AdamW(model.parameters(), lr=lr_stage_1, weight_decay=weight_decay)
+    optimiser = AdamW(model.parameters(), lr=lr_stage_1, weight_decay=weight_decay)
 
     print("Starting training process...\n")
 
@@ -116,7 +108,7 @@ def train():
         print(f"Found '{checkpoint_path}'. Resuming training...")
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint['model_state'])
-        optimizer.load_state_dict(checkpoint['optimizer_state'])
+        optimiser.load_state_dict(checkpoint['optimiser_state'])
         start_epoch = checkpoint['epoch'] + 1
         best_val_loss = checkpoint['best_val_loss']
         history_train_loss = checkpoint['history_train_loss']
@@ -124,24 +116,51 @@ def train():
         tracked_snr = checkpoint.get('tracked_snr', checkpoint.get('tracked_snr', []))
         print(f"Resuming from epoch {start_epoch + 1}...\n")
 
-    # Time tracking
     global_start_time = time.time()
     max_runtime = config['training'].get('max_runtime_minutes', float('inf')) * 60
 
-    # The epoch loop
+    # Epoch loop
     try:
         for epoch in range(start_epoch, epochs):
             start_time = time.time()
             
             # TRAINING PHASE
             current_lr = lr_stage_1 if epoch < epoch_switch else lr_stage_2
-            for param_group in optimizer.param_groups:
+            for param_group in optimiser.param_groups:
                 param_group['lr'] = current_lr
 
             model.train()
             train_loss = 0.0
 
             for hp_b, hx_b, targets in train_loader:
+                current_batch_size = hp_b.shape[0]
+                
+                # Sample extrinsic parameters for the batch
+                ra = np.random.uniform(ext_priors['ra_min'], ext_priors['ra_max'], current_batch_size)
+                dec = np.random.uniform(ext_priors['dec_min'], ext_priors['dec_max'], current_batch_size)
+                psi = np.random.uniform(ext_priors['psi_min'], ext_priors['psi_max'], current_batch_size)
+                gps = np.random.uniform(ext_priors['gps_min'], ext_priors['gps_max'], current_batch_size)
+                dist = np.random.uniform(ext_priors['distance_min'], ext_priors['distance_max'], current_batch_size)
+                
+                # Compute antenna patterns
+                F_p, F_c, t_delays, asd_t = projector.project_batch(ra, dec, psi, gps)
+                
+                # Convert to tensors and unsqueeze to shape [n_det, batch, 1]
+                F_plus = torch.tensor(F_p, dtype=torch.float32, device=device).unsqueeze(-1)
+                F_cross = torch.tensor(F_c, dtype=torch.float32, device=device).unsqueeze(-1)
+                time_delays = torch.tensor(t_delays, dtype=torch.float32, device=device).unsqueeze(-1)
+                asd_tensors = torch.tensor(asd_t, dtype=torch.float32, device=device)
+                
+                # Extrinsic context vector: [Batch, 5]
+                # Normalise extrinsic parameters to [0, 1] to prevent gradient explosion
+                ra_norm = (ra - ext_priors['ra_min']) / (ext_priors['ra_max'] - ext_priors['ra_min'] + 1e-8)
+                dec_norm = (dec - ext_priors['dec_min']) / (ext_priors['dec_max'] - ext_priors['dec_min'] + 1e-8)
+                psi_norm = (psi - ext_priors['psi_min']) / (ext_priors['psi_max'] - ext_priors['psi_min'] + 1e-8)
+                gps_norm = (gps - ext_priors['gps_min']) / (ext_priors['gps_max'] - ext_priors['gps_min'] + 1e-8)
+                dist_norm = (dist - ext_priors['distance_min']) / (ext_priors['distance_max'] - ext_priors['distance_min'] + 1e-8)
+
+                extrinsic_params = torch.tensor(np.column_stack((ra_norm, dec_norm, psi_norm, gps_norm, dist_norm)), dtype=torch.float32, device=device)
+
                 hp_b = hp_b.float().to(device)
                 hx_b = hx_b.float().to(device)
                 targets = targets.float().to(device)
@@ -153,10 +172,10 @@ def train():
                 if epoch == 0 and config.get('diagnostics', {}).get('compute_snr', True):
                     tracked_snr.extend(snr.cpu().flatten().tolist())
 
-                optimizer.zero_grad()
-                loss = model(signals, targets)
+                optimiser.zero_grad()
+                loss = model(signals, targets, extrinsic_params)
                 loss.backward()
-                optimizer.step()
+                optimiser.step()
 
                 train_loss += loss.item()
             
@@ -172,6 +191,30 @@ def train():
 
             with torch.no_grad():
                 for hp_b, hx_b, targets in val_loader:
+                    current_batch_size = hp_b.shape[0]
+                    
+                    ra = np.random.uniform(ext_priors['ra_min'], ext_priors['ra_max'], current_batch_size)
+                    dec = np.random.uniform(ext_priors['dec_min'], ext_priors['dec_max'], current_batch_size)
+                    psi = np.random.uniform(ext_priors['psi_min'], ext_priors['psi_max'], current_batch_size)
+                    gps = np.random.uniform(ext_priors['gps_min'], ext_priors['gps_max'], current_batch_size)
+                    dist = np.random.uniform(ext_priors['distance_min'], ext_priors['distance_max'], current_batch_size)
+                    
+                    F_p, F_c, t_delays, asd_t = projector.project_batch(ra, dec, psi, gps)
+                    
+                    F_plus = torch.tensor(F_p, dtype=torch.float32, device=device).unsqueeze(-1)
+                    F_cross = torch.tensor(F_c, dtype=torch.float32, device=device).unsqueeze(-1)
+                    time_delays = torch.tensor(t_delays, dtype=torch.float32, device=device).unsqueeze(-1)
+                    asd_tensors = torch.tensor(asd_t, dtype=torch.float32, device=device)
+                    
+                    # Normalise extrinsic parameters to [0, 1] to prevent gradient explosion
+                    ra_norm = (ra - ext_priors['ra_min']) / (ext_priors['ra_max'] - ext_priors['ra_min'] + 1e-8)
+                    dec_norm = (dec - ext_priors['dec_min']) / (ext_priors['dec_max'] - ext_priors['dec_min'] + 1e-8)
+                    psi_norm = (psi - ext_priors['psi_min']) / (ext_priors['psi_max'] - ext_priors['psi_min'] + 1e-8)
+                    gps_norm = (gps - ext_priors['gps_min']) / (ext_priors['gps_max'] - ext_priors['gps_min'] + 1e-8)
+                    dist_norm = (dist - ext_priors['distance_min']) / (ext_priors['distance_max'] - ext_priors['distance_min'] + 1e-8)
+    
+                    extrinsic_params = torch.tensor(np.column_stack((ra_norm, dec_norm, psi_norm, gps_norm, dist_norm)), dtype=torch.float32, device=device)
+
                     hp_b = hp_b.float().to(device)
                     hx_b = hx_b.float().to(device)
                     targets = targets.float().to(device)
@@ -180,7 +223,7 @@ def train():
                         hp_b, hx_b, F_plus, F_cross, time_delays, asd_tensors, scale, sample_rate, duration, device
                     )
                     
-                    loss = model(signals, targets)
+                    loss = model(signals, targets, extrinsic_params)
                     val_loss += loss.item()
                     
             avg_val_loss = val_loss / len(val_loader)
@@ -196,11 +239,11 @@ def train():
                 best_val_loss = avg_val_loss
                 torch.save(model.state_dict(), save_path)
                 
-            # SAVE CHECKPOINT
+            # Save checkpoint
             checkpoint = {
                 'epoch': epoch,
                 'model_state': model.state_dict(),
-                'optimizer_state': optimizer.state_dict(),
+                'optimiser_state': optimiser.state_dict(),
                 'best_val_loss': best_val_loss,
                 'history_train_loss': history_train_loss,
                 'history_val_loss': history_val_loss,

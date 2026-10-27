@@ -29,7 +29,7 @@ def generate_ringdown(Mf, af,
     t = np.arange(0, duration, 1.0 / sample_rate)
     t_dim = t / (Mf * M_SUN_S)
     
-    # QNM: fundamental mode (2, 2, 0), first overtone (2, 2, 1)
+    # Fundamental mode (2, 2, 0), first overtone (2, 2, 1)
     mode_0 = qnm.modes_cache(s=-2, l=2, m=2, n=0)
     mode_1 = qnm.modes_cache(s=-2, l=2, m=2, n=1)
     

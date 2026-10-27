@@ -77,7 +77,11 @@ The repository is modularly designed, separating the physics generation, deep le
 
 2. Core Directories
     * `configs/`
-        * `config.yaml`: The master control file. Use this to alter training hyperparameters (learning rate, epochs, batch size), neural network depth, physics duration, and model save paths.
+        * `config.yaml`: The master control file. Edit it or copy and modify to fix
+            * The physical scales, the detectors included and boundaries for the prior distributions.
+            * The training hyperparameters and architectural configurations for the neural network.
+            * The extrinsic parameters for single-event injections and optional outputs from diagnostics.
+            * The paths to save the datasets and the model.
     * `data/`
         * `generate_dataset.py`: Offline generator of HDF5 files containing the dataset of waveforms for training, validation and diagnostics using the P-P plot. Run this file by typing the following command in the terminal,
         ```sh

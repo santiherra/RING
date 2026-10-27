@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import corner 
-import bilby
 from pathlib import Path
 
 project_root = str(Path(__file__).resolve().parent.parent)
@@ -14,7 +13,7 @@ if project_root not in sys.path:
 
 from models.flow import RingdownPosterior
 from data.dataset import RingdownDataset
-from physics.detector import get_detector_responses
+from physics.detector import VectorisedDetectorProjector
 from physics.transforms import get_gpu_noise_and_whiten
 from utils.parser import load_config
 import argparse
@@ -39,7 +38,7 @@ def run_inference():
     save_path = os.path.join(project_root, config['training']['save_dir'])
     print(f"Looking for model at:  {save_path}")
 
-    # Device configuration. Search for MPS, then CUDA, else CPU.
+    # Device configuration. Search for CUDA, then MPS, else CPU.
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -80,20 +79,35 @@ def run_inference():
     hx_tensor = hx_tensor.unsqueeze(0).to(device)
     true_params = true_params.numpy()
 
-    responses = get_detector_responses(
+    # Load projector and target event parameters
+    projector = VectorisedDetectorProjector(
         detector_names=detector_names,
-        ra=config['event']['fixed_ra'],
-        dec=config['event']['fixed_dec'],
-        psi=config['event']['fixed_psi'],
-        gps_time=config['event']['fixed_gps'],
         sample_rate=config['physics']['sample_rate'],
         duration=config['physics']['duration']
     )
 
-    F_plus = torch.tensor(responses['F_plus'], dtype=torch.float32, device=device)
-    F_cross = torch.tensor(responses['F_cross'], dtype=torch.float32, device=device)
-    time_delays = torch.tensor(responses['time_delay'], dtype=torch.float32, device=device)
-    asd_tensors = torch.tensor(responses['asd'], dtype=torch.float32, device=device)
+    ra = np.array([config['event']['fixed_ra']])
+    dec = np.array([config['event']['fixed_dec']])
+    psi = np.array([config['event']['fixed_psi']])
+    gps = np.array([config['event']['fixed_gps']])
+    dist = np.array([config['event']['fixed_distance']])
+
+    F_p, F_c, t_delays, asd_t = projector.project_batch(ra, dec, psi, gps)
+
+    F_plus = torch.tensor(F_p, dtype=torch.float32, device=device).unsqueeze(-1)
+    F_cross = torch.tensor(F_c, dtype=torch.float32, device=device).unsqueeze(-1)
+    time_delays = torch.tensor(t_delays, dtype=torch.float32, device=device).unsqueeze(-1)
+    asd_tensors = torch.tensor(asd_t, dtype=torch.float32, device=device)
+    
+    # Normalise extrinsic parameters to [0, 1] to prevent gradient explosion
+    ext_priors = config['extrinsic_priors']
+    ra_norm = (ra - ext_priors['ra_min']) / (ext_priors['ra_max'] - ext_priors['ra_min'] + 1e-8)
+    dec_norm = (dec - ext_priors['dec_min']) / (ext_priors['dec_max'] - ext_priors['dec_min'] + 1e-8)
+    psi_norm = (psi - ext_priors['psi_min']) / (ext_priors['psi_max'] - ext_priors['psi_min'] + 1e-8)
+    gps_norm = (gps - ext_priors['gps_min']) / (ext_priors['gps_max'] - ext_priors['gps_min'] + 1e-8)
+    dist_norm = (dist - ext_priors['distance_min']) / (ext_priors['distance_max'] - ext_priors['distance_min'] + 1e-8)
+    
+    extrinsic_params = torch.tensor(np.column_stack((ra_norm, dec_norm, psi_norm, gps_norm, dist_norm)), dtype=torch.float32, device=device)
 
     signal_tensor, snr = get_gpu_noise_and_whiten(
         hp_tensor, hx_tensor, F_plus, F_cross, time_delays, asd_tensors, scale, 
@@ -108,12 +122,14 @@ def run_inference():
 
     t0_inf = time.time()
     with torch.no_grad():
-        samples = model.sample(signal_tensor, num_samples=num_samples)
+        samples = model.sample(signal_tensor, extrinsic_params, num_samples=num_samples)
     print(f"Generated {num_samples} posterior samples in {time.time() - t0_inf:.2f} s.")
 
     samples = samples.squeeze(0).cpu().numpy()
 
     # Cartesian corner plot
+    ext_str = rf"$\alpha$: {ra[0]:.2f}, $\delta$: {dec[0]:.2f}, $\psi$: {psi[0]:.2f}, $d_L$: {dist[0]:.0f} Mpc"
+
     labels_cart = [r"$M_f$", r"$a_f$", 
                    r"$x_{+,0}$", r"$y_{+,0}$", r"$x_{\times,0}$", r"$y_{\times,0}$",
                    r"$x_{+,1}$", r"$y_{+,1}$", r"$x_{\times,1}$", r"$y_{\times,1}$"]
@@ -128,7 +144,7 @@ def run_inference():
         color='royalblue',
         truth_color='red'
     )
-    fig_cart.suptitle(f"Corner plot, cartesian parameters (Injected SNR: {snr.item():.1f})", fontsize=16)
+    fig_cart.suptitle(f"Corner plot, cartesian parameters (Injected SNR: {snr.item():.1f})\n{ext_str}", fontsize=16)
     plt.show()
 
     # Polar corner plot
@@ -168,7 +184,7 @@ def run_inference():
         color='seagreen',
         truth_color='red'
     )
-    fig_polar.suptitle(f"Corner plot, polar parameters (Injected SNR: {snr.item():.1f})", fontsize=16)
+    fig_polar.suptitle(f"Corner plot, polar parameters (Injected SNR: {snr.item():.1f})\n{ext_str}", fontsize=16)
     plt.show()
 
 

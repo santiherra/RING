@@ -3,16 +3,30 @@ physics:
   sample_rate: 4096
   duration: 0.0625
   scale: 1e-21
-
-# Target event (Extrinsic parameters)
-event:
   detectors: ["H1", "L1"]
+
+# Extrinsic parameters 
+extrinsic_priors:
+  ra_min: 0.0
+  ra_max: 6.283185307
+  dec_min: -1.570796327
+  dec_max: 1.570796327
+  psi_min: 0.0
+  psi_max: 3.141592654
+  gps_min: 1420950000.0
+  gps_max: 1421036400.0
+  distance_min: 100.0
+  distance_max: 1000.0
+
+# Target event
+event:
   fixed_ra: 1.5
   fixed_dec: -0.5
   fixed_psi: 0.8
   fixed_gps: 1420950000.0
+  fixed_distance: 400.0 
 
-# Prior boundaries (Intrinsic parameters)
+# Prior boundaries, intrinsic parameters
 priors:
   mass_min: 50.0
   mass_max: 100.0
@@ -27,6 +41,10 @@ model:
   context_dim: 64
   hidden_features: 128
   num_transforms: 5
+  extrinsic_mlp: 
+    in_features: 5
+    hidden_features: [16, 32]
+    out_features: 32
   embedding_net:
     in_channels: 2
     channels: [16, 32, 64]

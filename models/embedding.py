@@ -24,7 +24,6 @@ class WaveformEmbedding(nn.Module):
             - pool_dilation: Spacing between kernel elements for pooling (default 1).
         - output_dim: The number of summary features to output (default 64).
         '''
-
         super(WaveformEmbedding, self).__init__()
 
         self.in_channels = embedding_config.get('in_channels', 1)
@@ -104,7 +103,7 @@ class WaveformEmbedding(nn.Module):
         
     def forward(self, x):
         """ 
-        Passes the waveform tensor through the network layers 
+        Passes the waveform tensor through the network layers. 
         
         Parameters:
         - x: Input tensor of shape [Batch, in_channels, sequence_length]
@@ -117,6 +116,48 @@ class WaveformEmbedding(nn.Module):
         
         return features
 
+class ExtrinsicMLP(nn.Module):
+    def __init__(self, mlp_config):
+        '''
+        Initialises a Multi-Layer Perceptron to compress raw extrinsic physical parameters 
+        into an embedding vector.
+        
+        Parameters:
+        - mlp_config: A dictionary containing
+            - 'in_features': Number of input features (default 5).
+            - 'hidden_features': List of hidden layer dimensions.
+            - 'out_features': Number of output features.
+        '''
+        super(ExtrinsicMLP, self).__init__()
+        
+        in_features = mlp_config.get('in_features', 5)
+        hidden_features = mlp_config.get('hidden_features', [16, 32])
+        out_features = mlp_config.get('out_features', 32)
+        
+        layers = []
+        current_in = in_features
+        for h_dim in hidden_features:
+            layers.append(nn.Linear(current_in, h_dim))
+            layers.append(nn.ReLU())
+            current_in = h_dim
+            
+        layers.append(nn.Linear(current_in, out_features))
+        
+        self.mlp_blocks = nn.Sequential(*layers)
+        
+    def forward(self, x):
+        """ 
+        Passes the extrinsic parameters through the network layers. 
+        
+        Parameters:
+        - x: Input tensor of shape [Batch, in_features]
+        
+        Returns:
+        - features: Output tensor of shape [Batch, out_features]
+        """
+        return self.mlp_blocks(x)
+
+
 ''' QUICK TEST '''
 if __name__ == "__main__":
     test_length = 256
@@ -127,6 +168,11 @@ if __name__ == "__main__":
     }
     dummy_batch = torch.randn(32, 1, test_length)
     embedder = WaveformEmbedding(sequence_length=test_length, embedding_config=test_config, output_dim=64)
-    print(f"Output shape: {embedder(dummy_batch).shape}")
+    print(f"CNN output shape: {embedder(dummy_batch).shape}")
     print("Architectural CNN algebra mathematically consistent.")
+
+    test_mlp_config = {'in_features': 5, 'hidden_features': [16, 32], 'out_features': 32}
+    dummy_extrinsics = torch.randn(32, 5)
+    mlp = ExtrinsicMLP(mlp_config=test_mlp_config)
+    print(f"MLP Output shape: {mlp(dummy_extrinsics).shape}")
     

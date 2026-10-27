@@ -15,7 +15,7 @@ import argparse
 
 def generate_hdf5_dataset(output_file, num_samples, config):
     '''
-    Generates a clean dataset of ringdown polarizations and saves to HDF5.
+    Generates a clean dataset of ringdown polarisations and saves to HDF5.
 
     Params: 
     - output_file: Path to store HDF5 file.

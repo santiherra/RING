@@ -3,7 +3,7 @@ import numpy as np
 
 def get_gpu_noise_and_whiten(hp, hx, F_plus, F_cross, time_delays, asd_tensors, scale, sample_rate, duration, device):
     '''
-    Projects polarizations to detector, adds colored Gaussian noise, and whitens on GPU.
+    Projects polarisations to detector, adds colored Gaussian noise, and whitens on GPU.
 
     Parameters:
     - hp: plus polarisation. Tensor of shape [batch_size, seq_len].
@@ -51,7 +51,7 @@ def get_gpu_noise_and_whiten(hp, hx, F_plus, F_cross, time_delays, asd_tensors, 
         whitened_H_k = H_k * W_k
         whitened_td = torch.fft.irfft(whitened_H_k, n=seq_len)
 
-        # Independent time-domain white noise realization per detector
+        # Independent time-domain white noise realisation per detector
         noise_td = torch.randn(batch_size, seq_len, device=device)
         d_white = whitened_td + noise_td
         whitened_channels.append(d_white)
@@ -62,7 +62,6 @@ def get_gpu_noise_and_whiten(hp, hx, F_plus, F_cross, time_delays, asd_tensors, 
     return network_input, snr_net
 
 if __name__ == "__main__":
-    # Example usage
     batch_size = 2
     seq_len = 1024
     n_det = 2
