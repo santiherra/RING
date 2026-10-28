@@ -63,6 +63,8 @@ model:
 training:
   epochs: 200
   batch_size: 64
+  num_workers: 0  # Set to 0 when running locally on Mac
+  pin_memory: true
   lr_stage_1: 0.0005
   lr_stage_2: 0.00005
   epoch_switch: 100

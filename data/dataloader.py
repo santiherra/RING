@@ -1,3 +1,4 @@
+from logging import config
 import sys
 import os
 
@@ -34,11 +35,34 @@ def get_dataloaders(num_train=None, num_val=None, batch_size=None, config_path="
         batch_size = config['training']['batch_size']
     
     # Initialise dataset with config
+    num_workers = config['training'].get('num_workers', 0)
+    pin_memory = config['training'].get('pin_memory', False)
+
     train_dataset = RingdownDataset(num_samples=num_train, config=config, dataset_type='train')
     val_dataset = RingdownDataset(num_samples=num_val, config=config, dataset_type='val')
+
+    worker_kwargs = {}
+    if num_workers > 0:
+        worker_kwargs['persistent_workers'] = True
+        worker_kwargs['prefetch_factor'] = 2
+
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=batch_size, 
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        **worker_kwargs
+    )
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(
+        val_dataset, 
+        batch_size=batch_size, 
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        **worker_kwargs
+    )
     
     return train_loader, val_loader
 
